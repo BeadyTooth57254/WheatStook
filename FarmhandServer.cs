@@ -1,9 +1,11 @@
 using System.Net;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Menus;
 using StardewValley.Tools;
 using Microsoft.Xna.Framework;
 
@@ -226,6 +228,113 @@ public class FarmhandServer
         }
 
         StepMovement();
+        AutoConfirmDayEnd();
+    }
+
+    // ── day-end menu automation ──
+    private int _dayEndTicks;
+    private int _autoConfirmCooldown;
+    private bool _autoConfirm = true;
+
+    /// <summary>Auto-clear the day-end menus (skill-up, profession choice, shipping summary).</summary>
+    public bool AutoConfirm { get => _autoConfirm; set => _autoConfirm = value; }
+
+    /// <summary>
+    /// A farmhand that sleeps in co-op still gets the day-end screens — the skill
+    /// level-up boxes, the level 5/10 profession choice, and the shipping/earnings
+    /// summary — and they block the night until somebody clicks them. The host cannot
+    /// click them for us, so clear them automatically while the day-end flow is active.
+    /// </summary>
+    private void AutoConfirmDayEnd()
+    {
+        if (!Context.IsWorldReady || Game1.player is null) return;
+
+        // in bed, or just asked to sleep → keep the day-end window open
+        if (Game1.player.isInBed.Value) _dayEndTicks = Math.Max(_dayEndTicks, 120);
+        if (_dayEndTicks > 0) _dayEndTicks--;
+        if (!_autoConfirm || _dayEndTicks == 0) return;
+        if (_autoConfirmCooldown > 0) { _autoConfirmCooldown--; return; }
+
+        try
+        {
+            switch (Game1.activeClickableMenu)
+            {
+                case LevelUpMenu lum:
+                    if (lum.isProfessionChooser)
+                    {
+                        int pick = FirstProfessionChoice(lum);
+                        ClickComponent(lum, lum.leftProfession);
+                        _monitor.Log($"auto-confirm: 选了职业 {ProfessionName(lum, pick)}", LogLevel.Info);
+                    }
+                    else
+                    {
+                        lum.okButtonClicked();
+                        _monitor.Log("auto-confirm: 技能升级界面 确定", LogLevel.Info);
+                    }
+                    _autoConfirmCooldown = 20;
+                    break;
+
+                case ShippingMenu sm:
+                    ClickComponent(sm, sm.okButton);
+                    _monitor.Log("auto-confirm: 结算界面 确定", LogLevel.Info);
+                    _autoConfirmCooldown = 20;
+                    break;
+
+                case ConfirmationDialog cd:
+                    cd.confirm();
+                    _monitor.Log("auto-confirm: 确认对话框 确定", LogLevel.Info);
+                    _autoConfirmCooldown = 20;
+                    break;
+
+                case DialogueBox db when db.responses is { Length: > 0 } && db.responseCC is { Count: > 0 }:
+                    ClickComponent(db, db.responseCC[0]);
+                    _monitor.Log("auto-confirm: 问答对话 选第一项", LogLevel.Info);
+                    _autoConfirmCooldown = 20;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"auto-confirm failed: {ex.Message}", LogLevel.Warn);
+        }
+    }
+
+    private static void ClickComponent(IClickableMenu menu, ClickableComponent? component)
+    {
+        if (component is null) return;
+        menu.receiveLeftClick(component.bounds.Center.X, component.bounds.Center.Y, true);
+    }
+
+    /// <summary>LevelUpMenu keeps the two offered profession ids private, so read them by reflection.</summary>
+    private static int FirstProfessionChoice(LevelUpMenu lum)
+    {
+        try
+        {
+            var field = lum.GetType().GetField("professionsToChoose", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field?.GetValue(lum) is System.Collections.IList list && list.Count > 0)
+                return Convert.ToInt32(list[0]);
+        }
+        catch { }
+        return -1;
+    }
+
+    private static string ProfessionName(LevelUpMenu lum, int id)
+    {
+        if (id < 0) return "?";
+        try
+        {
+            var method = lum.GetType().GetMethod("getProfessionName", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (method?.Invoke(lum, new object[] { id }) is string name && name.Length > 0) return name;
+        }
+        catch { }
+        return $"id {id}";
+    }
+
+    private object HandleAutoConfirm(HttpListenerContext ctx)
+    {
+        var p = ReadJson(ctx);
+        if (p is not null && p.ContainsKey("enabled")) _autoConfirm = Get(p, "enabled", true);
+        return new { ok = true, autoConfirm = _autoConfirm, dayEndActive = _dayEndTicks > 0 };
     }
 
     private void StepMovement()
@@ -286,6 +395,7 @@ public class FarmhandServer
                 ("POST", "/area") => HandleArea(ctx),
                 ("POST", "/sleep") => HandleSleep(ctx),
                 ("POST", "/awake") => HandleAwake(ctx),
+                ("POST", "/autoconfirm") => HandleAutoConfirm(ctx),
                 ("POST", "/talk") => HandleTalk(ctx),
                 ("POST", "/memory") => HandleMemoryWrite(ctx),
                 ("POST", "/react") => HandleReact(ctx),
@@ -1569,6 +1679,7 @@ public class FarmhandServer
         // new-day handshake. Setting isInBed alone left the farmhand flagged in-bed while
         // standing in a field, and the night never passed — the bug this replaces.
         int face = by > sy ? 2 : by < sy ? 0 : bx > sx ? 1 : 3;
+        _dayEndTicks = Math.Max(_dayEndTicks, 60 * 30);   // keep auto-confirm armed for the night
         Enqueue(() =>
         {
             var farmer = Game1.player;

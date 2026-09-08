@@ -112,6 +112,7 @@ ROUTES = {
     "bed": ("GET", "/bed", None),
     "sleep": ("POST", "/sleep", {"force": None}),
     "awake": ("POST", "/awake", None),
+    "autoconfirm": ("POST", "/autoconfirm", {"enabled": None}),
     "talk": ("POST", "/talk", {"target": None}),
     "memory": ("GET", "/memory", None),
     "mods": ("GET", "/mods", {"q": None}),

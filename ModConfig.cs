@@ -65,6 +65,14 @@ public class ModConfig
     // says the configured line. Off by default.
     public bool giftReactionsEnabled { get; set; } = false;
 
+    // --- Day-end menu automation ---
+    // When true the farmhand clicks through the day-end screens itself: the skill
+    // level-up boxes, the level 5/10 profession choice, and the shipping/earnings
+    // summary. In co-op those screens block the night and the host cannot click them
+    // on a farmhand's behalf, so without this the night just hangs. Toggle live with
+    // POST /autoconfirm (or the wheatstook_autoconfirm tool) without restarting.
+    public bool autoConfirmDayEnd { get; set; } = true;
+
     // --- Auto-compatibility layer ---
     // When enableAutoCompat is on, 麦垛 detects installed mods that change
     // world state (ring slots, backpack, custom crops/regions, professions, ...)

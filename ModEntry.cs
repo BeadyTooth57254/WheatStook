@@ -211,6 +211,7 @@ public class ModEntry : Mod
             _server.Reactions = _reactions;
             _server.Mods = _mods;
             _server.ModVersion = ModManifest.Version.ToString();
+            _server.AutoConfirm = _config!.autoConfirmDayEnd;
             _server.Start();
         }
         _server?.Tick();

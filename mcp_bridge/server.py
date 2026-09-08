@@ -201,6 +201,15 @@ async def awake() -> str:
 
 
 @mcp.tool()
+async def autoconfirm(enabled: bool | None = None) -> str:
+    """Day-end screens: the farmhand clicks them itself (skill level-up boxes, the level 5/10 profession choice, the shipping/earnings summary). In co-op those screens block the night and the host cannot click them for a farmhand, so without this the night hangs. Pass enabled=false to stop it (then somebody must click the screens), true to resume; omit to just read the current setting. The profession choice always takes the left (first) option."""
+    body: dict = {}
+    if enabled is not None:
+        body["enabled"] = enabled
+    return await _tool("autoconfirm", body)
+
+
+@mcp.tool()
 async def talk(target: str = "") -> str:
     """Talk to an NPC: triggers their dialogue (they face you and speak). target is an NPC name, or empty for the nearest NPC in the current location."""
     return await _tool("talk", {"target": target})

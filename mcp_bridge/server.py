@@ -178,8 +178,26 @@ async def follow(target: str = "") -> str:
 
 @mcp.tool()
 async def area(op: str, x1: int, y1: int, x2: int, y2: int) -> str:
-    """Batch-op a box of farmland tiles in one call. op: 'water' or 'unwater'."""
+    """Batch-op a box of farmland tiles in one call. op: 'inspect' (just report the bounds), 'water' (set HoeDirt wet), or 'harvest' (harvest ready crops). Only HoeDirt tiles are touched; the work is queued on the game thread, so re-read surroundings to confirm."""
     return await _tool("area", {"op": op, "x1": x1, "y1": y1, "x2": x2, "y2": y2})
+
+
+@mcp.tool()
+async def bed() -> str:
+    """Report the farmhand's bed/home state: whether already in bed, the home location, and whether a bed is in the current location (with its tile)."""
+    return await _tool("bed", {})
+
+
+@mcp.tool()
+async def sleep(force: bool = False) -> str:
+    """Go to bed / pass the night. Sets the farmhand in-bed (ready). In co-op the day advances when all players are ready / the host advances. Pass force=true to also force a new day (Game1.newDayAfterFade) — solo/host only, can desync co-op."""
+    return await _tool("sleep", {"force": force})
+
+
+@mcp.tool()
+async def talk(target: str = "") -> str:
+    """Talk to an NPC: triggers their dialogue (they face you and speak). target is an NPC name, or empty for the nearest NPC in the current location."""
+    return await _tool("talk", {"target": target})
 
 
 @mcp.tool()

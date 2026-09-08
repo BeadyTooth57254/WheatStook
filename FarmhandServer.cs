@@ -234,6 +234,7 @@ public class FarmhandServer
                 ("GET", "/menu") => HandleMenu(),
                 ("GET", "/inventory") => HandleInventory(ctx),
                 ("GET", "/selftest") => HandleSelfTest(),
+                ("GET", "/bed") => HandleBed(),
                 ("POST", "/move") => HandleMove(ctx),
                 ("POST", "/stop") => HandleStop(),
                 ("POST", "/face") => HandleFace(ctx),
@@ -244,6 +245,8 @@ public class FarmhandServer
                 ("POST", "/drop") => HandleDrop(ctx),
                 ("POST", "/follow") => HandleFollow(ctx),
                 ("POST", "/area") => HandleArea(ctx),
+                ("POST", "/sleep") => HandleSleep(ctx),
+                ("POST", "/talk") => HandleTalk(ctx),
                 ("POST", "/emote") => HandleEmote(ctx),
                 ("POST", "/warp") => HandleWarp(ctx),
                 ("POST", "/chat") => HandleChat(ctx),
@@ -919,7 +922,32 @@ public class FarmhandServer
             if (int.TryParse(ctx.Request.QueryString["radius"], out var r) && r is >= 1 and <= 30) radius = r;
             map = _config.stateOutput == "image" ? RenderMapImage(radius) : BuildAsciiMap(radius);
         }
-        return new { ok = true, kind, center = new { x = cx, y = cy }, chunk = new { size = chunkSize, window }, map, tiles };
+        // Ground items (dropped tools/objects). Skipped while riding a tractor with a tool
+        // in hand — the tractor harvests a huge field of dropped items, so a ground read
+        // would be absurd. Tool descriptions document this.
+        bool onTractorWithTool = RidingTractor() && Game1.player.CurrentTool != null;
+        List<object> groundItems = new List<object>();
+        if (!onTractorWithTool)
+        {
+            foreach (var d in loc.debris)
+            {
+                if (d?.item is null) continue;
+                var chunk = d.Chunks?.FirstOrDefault();
+                if (chunk is null) continue;
+                var gp = chunk.position.Value;
+                groundItems.Add(new { x = (int)(gp.X / 64), y = (int)(gp.Y / 64), item = d.item.Name });
+            }
+        }
+        return new
+        {
+            ok = true, kind,
+            center = new { x = cx, y = cy },
+            chunk = new { size = chunkSize, window },
+            onTractorWithTool,
+            groundItems = onTractorWithTool ? new List<object>() : groundItems,
+            groundItemsNote = onTractorWithTool ? "ground items skipped (riding tractor + holding tool)" : (string?)null,
+            map, tiles
+        };
     }
 
     /// <summary>Whether an NPC is a Tractor Mod tractor (by its own modData marker).</summary>
@@ -1448,15 +1476,111 @@ public class FarmhandServer
         return new { ok = true, target, status = "tracking" };
     }
 
+    private object HandleBed()
+    {
+        if (!Context.IsWorldReady) return new { ok = false, error = "World not ready" };
+        var f = Game1.player;
+        var loc = f?.currentLocation;
+        var bed = loc?.furniture?.OfType<StardewValley.Objects.BedFurniture>().FirstOrDefault();
+        return new
+        {
+            ok = true,
+            inBed = f?.isInBed?.Value ?? false,
+            homeLocation = f?.homeLocation?.Value,
+            location = loc?.Name,
+            bedInCurrentLocation = bed != null,
+            bed = bed == null ? null : (object)new { x = (int)bed.TileLocation.X, y = (int)bed.TileLocation.Y },
+            note = "POST /sleep to go to bed (sets isInBed; pass force:true to also advance the day)."
+        };
+    }
+
+    private object HandleSleep(HttpListenerContext ctx)
+    {
+        if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
+        var p = ReadJson(ctx);
+        bool force = Get(p, "force", false);
+        Enqueue(() =>
+        {
+            var f = Game1.player;
+            if (f is null) return;
+            f.isInBed.Value = true;
+            if (force)
+            {
+                try { Game1.newDayAfterFade(() => { }); }
+                catch (Exception ex) { _monitor.Log($"sleep force newDay failed: {ex.Message}", LogLevel.Warn); }
+            }
+        });
+        return new
+        {
+            ok = true,
+            inBed = true,
+            forced = force,
+            note = force
+                ? "Set in-bed and forced a new day (Game1.newDayAfterFade) — solo/host only; in co-op this can desync."
+                : "Farmhand set to in-bed (ready). In co-op the day advances when all players are ready / the host advances."
+        };
+    }
+
+    private object HandleTalk(HttpListenerContext ctx)
+    {
+        if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
+        var p = ReadJson(ctx);
+        string target = Get(p, "target", "");
+        var farmer = Game1.player;
+        var loc = farmer?.currentLocation;
+        if (farmer is null || loc is null) return new { ok = false, error = "No location" };
+        StardewValley.NPC? npc;
+        if (string.IsNullOrWhiteSpace(target))
+            npc = loc.characters.OrderBy(n => Math.Abs(n.TilePoint.X - farmer.TilePoint.X) + Math.Abs(n.TilePoint.Y - farmer.TilePoint.Y)).FirstOrDefault();
+        else
+            npc = loc.characters.FirstOrDefault(n => n.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
+        if (npc is null)
+            return new { ok = false, error = $"找不到 NPC '{target}' in {loc.Name}. 现有: {string.Join(", ", loc.characters.Select(n => n.Name))}" };
+        string name = npc.Name;
+        int nx = npc.TilePoint.X, ny = npc.TilePoint.Y;
+        Enqueue(() =>
+        {
+            try { npc.checkAction(Game1.player, loc); }
+            catch (Exception ex) { _monitor.Log($"talk checkAction failed: {ex.Message}", LogLevel.Warn); }
+        });
+        return new { ok = true, npc = name, x = nx, y = ny, queued = true, note = "NPC checkAction queued — they face you and say their line." };
+    }
+
     private object HandleArea(HttpListenerContext ctx)
     {
         if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
         var p = ReadJson(ctx);
-        string op = Get(p, "op", "inspect");
+        string op = Get(p, "op", "inspect").ToLower();
         int x1 = Get(p, "x1", 0), y1 = Get(p, "y1", 0), x2 = Get(p, "x2", 0), y2 = Get(p, "y2", 0);
-        // v1: area is a placeholder for harvest/water/etc. Mark WIP so the AI doesn't
-        // assume it actually performed the action.
-        return new { ok = true, op, wip = true, area = new { x = Math.Min(x1, x2), y = Math.Min(y1, y2), w = Math.Abs(x2 - x1) + 1, h = Math.Abs(y2 - y1) + 1 }, note = "WIP: area ops (harvest/water/etc.) not implemented yet — this only reports the region bounds." };
+        int ax = Math.Min(x1, x2), ay = Math.Min(y1, y2), bx = Math.Max(x1, x2), by = Math.Max(y1, y2);
+        int w = bx - ax + 1, h = by - ay + 1;
+        if (op == "inspect")
+            return new { ok = true, op, area = new { x = ax, y = ay, w, h } };
+        if (op != "water" && op != "harvest")
+            return new { ok = false, error = $"unsupported op '{op}' (use inspect|water|harvest)" };
+        // The mutation must run on the game thread; report "queued" rather than a count read
+        // before the queued work ran (the old async-timing trap).
+        Enqueue(() =>
+        {
+            var loc = Game1.player?.currentLocation;
+            if (loc is null) return;
+            for (int y = ay; y <= by; y++)
+            for (int x = ax; x <= bx; x++)
+            {
+                if (!loc.terrainFeatures.TryGetValue(new Vector2(x, y), out var tf)) continue;
+                if (tf is not StardewValley.TerrainFeatures.HoeDirt dirt) continue;
+                if (op == "water")
+                {
+                    if (dirt.state.Value != 1) dirt.state.Value = 1;
+                }
+                else if (dirt.crop != null)
+                {
+                    try { dirt.crop.harvest(x, y, dirt, null!, false); }
+                    catch (Exception ex) { _monitor.Log($"harvest ({x},{y}) failed: {ex.Message}", LogLevel.Warn); }
+                }
+            }
+        });
+        return new { ok = true, op, area = new { x = ax, y = ay, w, h }, queued = true, note = $"{op} queued over {w}x{h} region (HoeDirt tiles only)." };
     }
 
     private object HandleEmote(HttpListenerContext ctx)

@@ -236,8 +236,30 @@ public class FarmhandServer
     private int _autoConfirmCooldown;
     private bool _autoConfirm = true;
 
+    // pending level 5/10 profession choice: the AI decides, with a fallback so the night
+    // never hangs waiting for an answer that may never come
+    private LevelUpMenu? _pendingProfession;
+    private int _pendingProfessionTicks;
+    private int _pendingSkill = -1;
+    private int _pendingLevel = -1;
+    private int _pendingTimeoutTicks = 45 * 60;
+
     /// <summary>Auto-clear the day-end menus (skill-up, profession choice, shipping summary).</summary>
     public bool AutoConfirm { get => _autoConfirm; set => _autoConfirm = value; }
+
+    /// <summary>How to answer a level 5/10 profession choice: "ai" (ask, then fall back),
+    /// "random", "left", "right", or "off" (leave it for a human).</summary>
+    public string ProfessionMode { get; set; } = "ai";
+
+    /// <summary>Seconds to wait for an AI decision before falling back to random.</summary>
+    public int ProfessionTimeoutSeconds
+    {
+        get => Math.Max(5, _pendingTimeoutTicks / 60);
+        set => _pendingTimeoutTicks = Math.Max(5, value) * 60;
+    }
+
+    /// <summary>Optional push channel: called once when a decision is waiting for the AI.</summary>
+    public Action<string>? AiNotify { get; set; }
 
     /// <summary>
     /// A farmhand that sleeps in co-op still gets the day-end screens — the skill
@@ -258,6 +280,15 @@ public class FarmhandServer
         if (Game1.player.isInBed.Value || dayEndMenu) _dayEndTicks = Math.Max(_dayEndTicks, 120);
         if (_dayEndTicks > 0) _dayEndTicks--;
         if (!_autoConfirm || _dayEndTicks == 0) return;
+
+        // A profession choice is a real decision, not a click-through: publish it, let
+        // the AI answer while the night waits, and fall back so it never hangs.
+        if (menu is LevelUpMenu prof && prof.isProfessionChooser)
+        {
+            HandleProfessionChoice(prof);
+            return;
+        }
+
         if (_autoConfirmCooldown > 0) { _autoConfirmCooldown--; return; }
 
         try
@@ -265,17 +296,8 @@ public class FarmhandServer
             switch (menu)
             {
                 case LevelUpMenu lum:
-                    if (lum.isProfessionChooser)
-                    {
-                        int pick = FirstProfessionChoice(lum);
-                        ClickComponent(lum, lum.leftProfession);
-                        _monitor.Log($"auto-confirm: 选了职业 {ProfessionName(lum, pick)}", LogLevel.Info);
-                    }
-                    else
-                    {
-                        lum.okButtonClicked();
-                        _monitor.Log("auto-confirm: 技能升级界面 确定", LogLevel.Info);
-                    }
+                    lum.okButtonClicked();
+                    _monitor.Log("auto-confirm: 技能升级界面 确定", LogLevel.Info);
                     _autoConfirmCooldown = 20;
                     break;
 
@@ -310,17 +332,89 @@ public class FarmhandServer
         menu.receiveLeftClick(component.bounds.Center.X, component.bounds.Center.Y, true);
     }
 
-    /// <summary>LevelUpMenu keeps the two offered profession ids private, so read them by reflection.</summary>
-    private static int FirstProfessionChoice(LevelUpMenu lum)
+    /// <summary>
+    /// Level 5/10 profession choice. This one is not a click-through: publish the two
+    /// options so the AI can decide in the moment, and fall back after
+    /// ProfessionTimeoutSeconds so a silent AI cannot hang the night forever.
+    /// </summary>
+    private void HandleProfessionChoice(LevelUpMenu lum)
+    {
+        if (!ReferenceEquals(_pendingProfession, lum))
+        {
+            _pendingProfession = lum;
+            _pendingSkill = PrivateInt(lum, "currentSkill");
+            _pendingLevel = PrivateInt(lum, "currentLevel");
+            _pendingProfessionTicks = _pendingTimeoutTicks;
+
+            string options = DescribeProfessions(lum);
+            _monitor.Log($"职业二选一: {options} — 等 AI 决定 (最多 {_pendingProfessionTicks / 60}s)", LogLevel.Info);
+            ChatDisplay?.Invoke($"【升级】{options} 我该选哪个？");
+            AiNotify?.Invoke($"星露谷升级了，两个职业二选一：{options}。用 wheatstook_profession() 看选项，wheatstook_profession(choice=0 或 1) 回答。");
+        }
+
+        string mode = (ProfessionMode ?? "ai").Trim().ToLowerInvariant();
+        switch (mode)
+        {
+            case "off":
+                return;
+            case "left":
+                ResolveProfession(0, "配置 left");
+                return;
+            case "right":
+                ResolveProfession(1, "配置 right");
+                return;
+            case "random":
+                ResolveProfession(Random.Shared.Next(2), "配置 random");
+                return;
+        }
+
+        if (--_pendingProfessionTicks <= 0)
+            ResolveProfession(Random.Shared.Next(2), "AI 没回话，随机决定");
+    }
+
+    /// <summary>Click the chosen profession. index 0 = left option, 1 = right option.</summary>
+    private void ResolveProfession(int index, string reason)
+    {
+        var lum = _pendingProfession;
+        _pendingProfession = null;
+        _pendingProfessionTicks = 0;
+        if (lum is null) return;
+        try
+        {
+            ClickComponent(lum, index == 1 ? lum.rightProfession : lum.leftProfession);
+            _monitor.Log($"auto-confirm: 职业选了 {ProfessionNameAt(lum, index)}（{reason}）", LogLevel.Info);
+            ChatDisplay?.Invoke($"【升级】选了 {ProfessionNameAt(lum, index)}");
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"profession click failed: {ex.Message}", LogLevel.Warn);
+        }
+        _autoConfirmCooldown = 20;
+    }
+
+    /// <summary>currentSkill / currentLevel are private too — read them by reflection.</summary>
+    private static int PrivateInt(LevelUpMenu lum, string field)
     {
         try
         {
+            object? v = lum.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(lum);
+            return v is null ? -1 : Convert.ToInt32(v);
+        }
+        catch { return -1; }
+    }
+
+    /// <summary>LevelUpMenu keeps the offered profession ids private, so read them by reflection.</summary>
+    private static List<int> ProfessionChoices(LevelUpMenu lum)
+    {
+        var result = new List<int>();
+        try
+        {
             var field = lum.GetType().GetField("professionsToChoose", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field?.GetValue(lum) is System.Collections.IList list && list.Count > 0)
-                return Convert.ToInt32(list[0]);
+            if (field?.GetValue(lum) is System.Collections.IList list)
+                foreach (var v in list) result.Add(Convert.ToInt32(v));
         }
         catch { }
-        return -1;
+        return result;
     }
 
     private static string ProfessionName(LevelUpMenu lum, int id)
@@ -335,11 +429,69 @@ public class FarmhandServer
         return $"id {id}";
     }
 
+    private static string ProfessionNameAt(LevelUpMenu lum, int index)
+    {
+        var ids = ProfessionChoices(lum);
+        return index >= 0 && index < ids.Count ? ProfessionName(lum, ids[index]) : "?";
+    }
+
+    private static string DescribeProfessions(LevelUpMenu lum)
+    {
+        var ids = ProfessionChoices(lum);
+        if (ids.Count == 0) return "两个职业";
+        return string.Join("  /  ", ids.Select((id, i) => $"[{i}] {ProfessionName(lum, id)}"));
+    }
+
     private object HandleAutoConfirm(HttpListenerContext ctx)
     {
         var p = ReadJson(ctx);
         if (p is not null && p.ContainsKey("enabled")) _autoConfirm = Get(p, "enabled", true);
-        return new { ok = true, autoConfirm = _autoConfirm, dayEndActive = _dayEndTicks > 0 };
+        return new { ok = true, autoConfirm = _autoConfirm, dayEndActive = _dayEndTicks > 0, professionMode = ProfessionMode };
+    }
+
+    /// <summary>
+    /// GET  /profession → what is being asked right now, if anything.
+    /// POST /profession {"choice": 0|1|"left"|"right"|"random"} → answer it.
+    /// </summary>
+    private object HandleProfession(HttpListenerContext ctx)
+    {
+        var lum = _pendingProfession;
+
+        if (ctx.Request.HttpMethod == "POST")
+        {
+            var p = ReadJson(ctx);
+            if (p.ContainsKey("choice"))
+            {
+                if (lum is null)
+                    return new { ok = false, error = "no profession choice is waiting right now" };
+
+                string raw = Get(p, "choice", "").Trim().ToLowerInvariant();
+                int index = raw switch
+                {
+                    "0" or "left" => 0,
+                    "1" or "right" => 1,
+                    "random" => Random.Shared.Next(2),
+                    _ => -1,
+                };
+                if (index < 0)
+                    throw new InvalidOperationException("choice must be 0/1, left/right or random");
+
+                Enqueue(() => ResolveProfession(index, "AI 决定"));
+                return new { ok = true, chose = index, name = ProfessionNameAt(lum, index) };
+            }
+        }
+
+        if (lum is null) return new { ok = true, pending = false };
+        var ids = ProfessionChoices(lum);
+        return new
+        {
+            ok = true,
+            pending = true,
+            skill = _pendingSkill,
+            level = _pendingLevel,
+            secondsLeft = _pendingProfessionTicks / 60,
+            options = ids.Select((id, i) => new { index = i, id, name = ProfessionName(lum, id) }).ToArray(),
+        };
     }
 
     private void StepMovement()
@@ -401,6 +553,8 @@ public class FarmhandServer
                 ("POST", "/sleep") => HandleSleep(ctx),
                 ("POST", "/awake") => HandleAwake(ctx),
                 ("POST", "/autoconfirm") => HandleAutoConfirm(ctx),
+                ("GET", "/profession") => HandleProfession(ctx),
+                ("POST", "/profession") => HandleProfession(ctx),
                 ("POST", "/talk") => HandleTalk(ctx),
                 ("POST", "/memory") => HandleMemoryWrite(ctx),
                 ("POST", "/react") => HandleReact(ctx),

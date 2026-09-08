@@ -212,6 +212,9 @@ public class ModEntry : Mod
             _server.Mods = _mods;
             _server.ModVersion = ModManifest.Version.ToString();
             _server.AutoConfirm = _config!.autoConfirmDayEnd;
+            _server.ProfessionMode = _config!.professionMode;
+            _server.ProfessionTimeoutSeconds = _config!.professionTimeoutSeconds;
+            _server.AiNotify = SendAiMessage;
             _server.Start();
         }
         _server?.Tick();

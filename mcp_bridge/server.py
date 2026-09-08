@@ -210,6 +210,15 @@ async def autoconfirm(enabled: bool | None = None) -> str:
 
 
 @mcp.tool()
+async def profession(choice: str = "") -> str:
+    """Level 5/10 profession choice — the AI decides. Call with no argument to see what is waiting (skill, level, the two options, seconds left), then call again with choice="0" or "1" (or "left"/"right"/"random") to answer. The farmhand waits up to professionTimeoutSeconds (default 45s) and then picks at random so the night never hangs; the choice is permanent, so answer fast if you care."""
+    body: dict = {}
+    if choice:
+        body["choice"] = choice
+    return await _tool("profession", body)
+
+
+@mcp.tool()
 async def talk(target: str = "") -> str:
     """Talk to an NPC: triggers their dialogue (they face you and speak). target is an NPC name, or empty for the nearest NPC in the current location."""
     return await _tool("talk", {"target": target})

@@ -55,7 +55,12 @@
   "_说明_giftReactionsEnabled": "送礼反应（默认关，按需开）。开=收到物品时在面板打一行【收到】，并且如果 wheatstook_reactions.json 里有匹配规则，就按规则做表情+说台词（规则可用 /react 端点或 wheatstook_react 命令添加）。",
 
   "autoConfirmDayEnd": true,
-  "_说明_autoConfirmDayEnd": "日结界面自动点（默认开）。farmhand 睡觉后会出现技能升级框、5/10级职业二选一、卖货结算界面，这些界面会卡住夜晚，而房主没法替另一个玩家点。开=farmhand 自己点掉（职业一律选左边第一个，日志会记录选了哪个）。可用 /autoconfirm 端点或 wheatstook_autoconfirm 随时开关，不用重启。",
+  "_说明_autoConfirmDayEnd": "日结界面自动点（默认开）。farmhand 睡觉后会出现技能升级框、5/10级职业二选一、卖货结算界面，这些界面会卡住夜晚，而房主没法替另一个玩家点。开=farmhand 自己点掉。可用 /autoconfirm 端点或 wheatstook_autoconfirm 随时开关，不用重启。",
+
+  "professionMode": "ai",
+  "_说明_professionMode": "5/10级职业二选一怎么选（默认 ai=临时决定）。ai=把两个选项报给 AI 并等它回话（最多 professionTimeoutSeconds 秒），超时就随机选一个，保证夜晚不会卡死；也可以写死 left/right/random，或 off=完全不碰、留给真人点。AI 用 wheatstook_profession 看选项并回答。",
+  "professionTimeoutSeconds": 45,
+  "_说明_professionTimeoutSeconds": "ai 模式下等 AI 回话的秒数（默认45，最少5）。超时后随机选一个并写进日志。",
 
   "enableAutoCompat": false,
   "_说明_enableAutoCompat": "自动兼容层（默认关）。开=启动时检测到会改变游戏世界的模组（加戒指槽/超大背包/自定义作物/新地区/职业循环等，按 UniqueId 识别，不看文件夹名）就自动激活对应兼容 profile，并把激活列表写进 /state，让 AI 知道这农场不是原版。",

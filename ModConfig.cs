@@ -73,6 +73,14 @@ public class ModConfig
     // POST /autoconfirm (or the wheatstook_autoconfirm tool) without restarting.
     public bool autoConfirmDayEnd { get; set; } = true;
 
+    // --- Profession choice at level 5/10 ---
+    // "ai" (default) publishes the two options and waits for the AI to answer, falling
+    // back to a random pick after professionTimeoutSeconds so the night never hangs.
+    // Force a fixed answer with "left" / "right" / "random", or "off" to leave it to a
+    // human. Answer live with POST /profession or the wheatstook_profession tool.
+    public string professionMode { get; set; } = "ai";
+    public int professionTimeoutSeconds { get; set; } = 45;
+
     // --- Auto-compatibility layer ---
     // When enableAutoCompat is on, 麦垛 detects installed mods that change
     // world state (ring slots, backpack, custom crops/regions, professions, ...)

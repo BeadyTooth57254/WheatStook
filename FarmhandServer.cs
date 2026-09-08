@@ -249,15 +249,20 @@ public class FarmhandServer
     {
         if (!Context.IsWorldReady || Game1.player is null) return;
 
-        // in bed, or just asked to sleep → keep the day-end window open
-        if (Game1.player.isInBed.Value) _dayEndTicks = Math.Max(_dayEndTicks, 120);
+        var menu = Game1.activeClickableMenu;
+        bool dayEndMenu = menu is LevelUpMenu or ShippingMenu or ConfirmationDialog;
+
+        // In bed, just asked to sleep, or a day-end screen is already up → keep the
+        // window open. These screens can appear after the clock has already rolled over
+        // (isInBed back to false), so re-arm on the menus themselves as well.
+        if (Game1.player.isInBed.Value || dayEndMenu) _dayEndTicks = Math.Max(_dayEndTicks, 120);
         if (_dayEndTicks > 0) _dayEndTicks--;
         if (!_autoConfirm || _dayEndTicks == 0) return;
         if (_autoConfirmCooldown > 0) { _autoConfirmCooldown--; return; }
 
         try
         {
-            switch (Game1.activeClickableMenu)
+            switch (menu)
             {
                 case LevelUpMenu lum:
                     if (lum.isProfessionChooser)

@@ -188,15 +188,40 @@ public class FarmhandServer
         lock (_actionsLock) _actions.Enqueue(a);
     }
 
+    private int _tick;
+    private sealed class DeferredAction { public int AtTick; public Action Run = null!; }
+    private readonly List<DeferredAction> _deferred = new();
+
+    /// <summary>
+    /// Run an action on the game thread a few ticks from now. Needed for sequences
+    /// where the game needs a tick to settle in between (e.g. warp to the bed, then
+    /// use it) — Tick() drains the plain queue all at once, so that can't be split.
+    /// </summary>
+    public void EnqueueAfter(int ticks, Action a)
+    {
+        lock (_actionsLock)
+            _deferred.Add(new DeferredAction { AtTick = _tick + Math.Max(1, ticks), Run = a });
+    }
+
     /// <summary>Called from the mod's UpdateTicked. Drains the queue and steps movement.</summary>
     public void Tick()
     {
+        _tick++;
         lock (_actionsLock)
         {
             while (_actions.Count > 0)
             {
                 try { _actions.Dequeue().Invoke(); }
                 catch (Exception ex) { _monitor.Log($"Queued server action error: {ex.Message}", LogLevel.Error); }
+            }
+
+            for (int i = _deferred.Count - 1; i >= 0; i--)
+            {
+                if (_deferred[i].AtTick > _tick) continue;
+                var d = _deferred[i];
+                _deferred.RemoveAt(i);
+                try { d.Run(); }
+                catch (Exception ex) { _monitor.Log($"Deferred server action error: {ex.Message}", LogLevel.Error); }
             }
         }
 
@@ -260,6 +285,7 @@ public class FarmhandServer
                 ("POST", "/follow") => HandleFollow(ctx),
                 ("POST", "/area") => HandleArea(ctx),
                 ("POST", "/sleep") => HandleSleep(ctx),
+                ("POST", "/awake") => HandleAwake(ctx),
                 ("POST", "/talk") => HandleTalk(ctx),
                 ("POST", "/memory") => HandleMemoryWrite(ctx),
                 ("POST", "/react") => HandleReact(ctx),
@@ -1497,16 +1523,22 @@ public class FarmhandServer
         if (!Context.IsWorldReady) return new { ok = false, error = "World not ready" };
         var f = Game1.player;
         var loc = f?.currentLocation;
-        var bed = loc?.furniture?.OfType<StardewValley.Objects.BedFurniture>().FirstOrDefault();
+        var here = loc?.furniture?.OfType<StardewValley.Objects.BedFurniture>().FirstOrDefault();
+        GameLocation? home = null;
+        StardewValley.Objects.BedFurniture? bed = null;
+        int bx = -1, by = -1;
+        if (f is not null) (home, bed, bx, by) = FindHomeBed(f);
         return new
         {
             ok = true,
             inBed = f?.isInBed?.Value ?? false,
             homeLocation = f?.homeLocation?.Value,
             location = loc?.Name,
-            bedInCurrentLocation = bed != null,
-            bed = bed == null ? null : (object)new { x = (int)bed.TileLocation.X, y = (int)bed.TileLocation.Y },
-            note = "POST /sleep to go to bed (sets isInBed; pass force:true to also advance the day)."
+            bedInCurrentLocation = here != null,
+            bedHere = here == null ? null : (object)new { x = (int)here.TileLocation.X, y = (int)here.TileLocation.Y },
+            homeResolved = home?.Name,
+            homeBed = bed == null ? null : (object)new { x = bx, y = by },
+            note = "POST /sleep walks to the home bed and uses it like a player (that is what actually starts the co-op day handshake). POST /awake clears a stuck in-bed flag."
         };
     }
 
@@ -1515,26 +1547,95 @@ public class FarmhandServer
         if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
         var p = ReadJson(ctx);
         bool force = Get(p, "force", false);
+        var f = Game1.player;
+        if (f is null) return new { ok = false, error = "no player" };
+        if (f.isInBed.Value && !force)
+            return new { ok = false, error = "already flagged in-bed — POST /awake first (a half-sleep is what blocks the day)." };
+
+        var (home, bed, bx, by) = FindHomeBed(f);
+        if (home is null || bed is null)
+            return new { ok = false, error = $"no bed found (homeLocation='{f.homeLocation?.Value}')" };
+        var (sx, sy) = PickAdjacentStandingTile(home, bx, by);
+
+        // Step 1 (this tick): stand next to the bed. Step 2 (a few ticks later): use it.
+        // GameLocation.checkAction on the bed tile is exactly what a player click does,
+        // and that is what starts the vanilla sleep + co-op new-day handshake. Setting
+        // isInBed alone left the farmhand flagged in-bed while standing in a field, and
+        // the night never passed — the bug this replaces.
         Enqueue(() =>
         {
-            var f = Game1.player;
-            if (f is null) return;
-            f.isInBed.Value = true;
+            var farmer = Game1.player;
+            if (farmer is null) return;
+            if (farmer.currentLocation?.Name != home.Name || farmer.TilePoint.X != sx || farmer.TilePoint.Y != sy)
+                Game1.warpFarmer(home.Name, sx, sy, false);
+        });
+        EnqueueAfter(4, () =>
+        {
+            var farmer = Game1.player;
+            if (farmer is null) return;
+            try { home.checkAction(new xTile.Dimensions.Location(bx, by), Game1.viewport, farmer); }
+            catch (Exception ex) { _monitor.Log($"bed checkAction failed: {ex.Message}", LogLevel.Warn); }
             if (force)
             {
-                try { Game1.newDayAfterFade(() => { }); }
-                catch (Exception ex) { _monitor.Log($"sleep force newDay failed: {ex.Message}", LogLevel.Warn); }
+                try
+                {
+                    farmer.isInBed.Value = true;
+                    Game1.newDayAfterFade(() => { });
+                }
+                catch (Exception ex) { _monitor.Log($"forced new day failed: {ex.Message}", LogLevel.Warn); }
             }
         });
         return new
         {
             ok = true,
-            inBed = true,
+            home = home.Name,
+            bed = new { x = bx, y = by },
+            stand = new { x = sx, y = sy },
             forced = force,
             note = force
-                ? "Set in-bed and forced a new day (Game1.newDayAfterFade) — solo/host only; in co-op this can desync."
-                : "Farmhand set to in-bed (ready). In co-op the day advances when all players are ready / the host advances."
+                ? "walking to the bed and using it, then forcing a new day (solo/host only — can desync co-op)."
+                : "walking to the bed and using it; the host advances the day once every player is in bed."
         };
+    }
+
+    private object HandleAwake(HttpListenerContext ctx)
+    {
+        if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
+        Enqueue(() =>
+        {
+            var f = Game1.player;
+            if (f is null) return;
+            try { f.isInBed.Value = false; }
+            catch (Exception ex) { _monitor.Log($"awake failed: {ex.Message}", LogLevel.Warn); }
+        });
+        return new { ok = true, inBed = false, note = "cleared the in-bed flag (escape hatch for a half-sleep that blocks the day)." };
+    }
+
+    /// <summary>Home location + its bed tile. Falls back to the current location.</summary>
+    private (GameLocation? home, StardewValley.Objects.BedFurniture? bed, int x, int y) FindHomeBed(Farmer f)
+    {
+        GameLocation? home = null;
+        var name = f.homeLocation?.Value ?? "";
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            try { home = Game1.getLocationFromName(name); } catch { }
+        }
+        home ??= f.currentLocation;
+        var bed = home?.furniture?.OfType<StardewValley.Objects.BedFurniture>().FirstOrDefault();
+        if (bed is null) return (home, null, -1, -1);
+        return (home, bed, (int)bed.TileLocation.X, (int)bed.TileLocation.Y);
+    }
+
+    /// <summary>First clear tile beside the bed (a player has to stand next to it).</summary>
+    private static (int x, int y) PickAdjacentStandingTile(GameLocation loc, int bx, int by)
+    {
+        var candidates = new[] { (bx, by + 1), (bx, by - 1), (bx + 1, by), (bx - 1, by) };
+        foreach (var (x, y) in candidates)
+        {
+            try { if (loc.isTilePassable(new Vector2(x, y))) return (x, y); }
+            catch { }
+        }
+        return (bx, by + 1);
     }
 
     private object HandleTalk(HttpListenerContext ctx)

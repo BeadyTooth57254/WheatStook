@@ -190,8 +190,14 @@ async def bed() -> str:
 
 @mcp.tool()
 async def sleep(force: bool = False) -> str:
-    """Go to bed / pass the night. Sets the farmhand in-bed (ready). In co-op the day advances when all players are ready / the host advances. Pass force=true to also force a new day (Game1.newDayAfterFade) — solo/host only, can desync co-op."""
+    """Go to bed / pass the night. Walks the farmhand to its home bed and uses it exactly like a player click would — that is what starts Stardew's co-op day-end handshake (just flagging in-bed leaves a half-sleep and the night never passes). In co-op the day advances once every player is in bed / the host advances. force=true additionally calls Game1.newDayAfterFade (solo/host only, can desync)."""
     return await _tool("sleep", {"force": force})
+
+
+@mcp.tool()
+async def awake() -> str:
+    """Clear the in-bed flag (escape hatch). Use this if the farmhand is flagged in-bed while standing somewhere else and the night won't pass — it stands the farmhand up so the bed can be used properly again."""
+    return await _tool("awake", {})
 
 
 @mcp.tool()

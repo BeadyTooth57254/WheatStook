@@ -1,49 +1,79 @@
-# WheatStook v1.1.0 — in-game AI chat + AI-controlled farmhand (co-op)
+# WheatStook v1.4.1 — Day-end automation, AI-driven choices, Operit forward fix
 
-> Ships with a compiled `WheatStook.dll` — just unzip and use, **no build required**.
+> The release ships a **pre-built `WheatStook.dll`** — unzip and play, no build step.
 >
-> This release includes **two archives**:
-> - **`WheatStook.zip`** — the mod itself. Unzip the whole `WheatStook/` folder into `Stardew Valley/Mods/`.
-> - **`WheatStook-mcp_bridge.zip`** — the **Python bridge** for co-op AI (`server.py` + `client.py` + `launcher.bat` + `gen_token.bat` + `scripts/mods_keybinds.json`). Unzip it locally — it is **not** installed into Mods; it runs on your PC.
+> Two archives:
+> - **`WheatStook-v1.4.1.zip`** — the mod. Drop the whole `WheatStook/` folder into `Stardew Valley/Mods/`.
+> - **`WheatStook-v1.4.1-mcp_bridge.zip`** — the **Python bridge** for the co-op AI (`server.py` + `client.py` + `launcher.bat` + `gen_token.bat` + `scripts/mods_keybinds.json`). Unzip anywhere on the PC; it does **not** go into `Mods/`.
 
-## New since v1.0.0
+---
 
-- **Renamed NagiBridge → WheatStook (麦垛)**: packaging, manifest and README aligned; the compat `CompatRules.json` comments updated too.
-- **AI-farmhand bridge: honest + expanded**:
-  - `get_state` is **light** by default; a new **`get_state_full`** does the full read (inventory/buildings/mods/teleports/enchantments) **only when explicitly called** (saves tokens, keeps the AI from being distracted by irrelevant data).
-  - **`inventory`**: reads **one row (12 slots)**, injecting the in-game time + local map at the same time; labels the equip hotkeys (1-9,0) and how to switch rows (`row=N`) — Stardew has no hotkey to switch inventory rows, stated honestly.
-  - **`wheatstook_selftest`**: server binding / config / mod count / memory / compat + bridge-channel status, for the AI to self-diagnose.
-  - **Coordinate chunking**: any returned coordinate carries precise (x,y) + the chunk coords + the sub-position inside that chunk (chunkSize defines the grid).
-  - **`drop` now really drops on the ground** (`Game1.createItemDebris`) and can be picked back up by walking over it — no more silent consummation.
-  - **In-game chat is visible**: the AI's `chat` messages go through the mod's own ChatHud panel (drawn on the current viewport) and **auto-open**, replacing the vanilla `Game1.chatBox` which only rendered in one player's viewport (so you couldn't see it before).
-  - Every response now carries `timeOfDay`/`gameTime`; the `send_ingame` (host 58331) vs `chat` (farmhand 58332) channel distinction is explicit.
-- **Fixed a batch of AI timing/truthfulness issues**: `handle_tool`/`handle_select`/`handle_move`/`follow`/`area` ok/used/found/steps are now computed synchronously or return "accepted/queued" (they used to report false); `findModDir` has per-folder try/catch; GMCM uses the real API.
-- **Auto-compat layer**: data-driven `CompatRules.json` + `enableAutoCompat` detection by UniqueID (extra ring slots / bigger backpack / custom crops / new regions / professions); the active list is written into /state.
-- **keybind**: a static `scripts/mods_keybinds.json`, re-read on every query (not once per startup); added Joja Express, removed the dead FA F6.
-- **Mod knowledge base / long-term memory / auto-reaction layer**: on-demand queries of installed-mod behavior, `wheatstook_mem` memory, a short daily-morning briefing.
+## v1.4.1 — stop cutting off Operit's reply stream
+
+- `HttpClient.Timeout` was a hard-coded **60 s**, and it covers reading the SSE body too — the mod disconnected while the AI was still writing, losing the reply.
+- Now: **15 s connect timeout** (fail fast when the server is down), **no limit on the reply stream**; new `operitReplyTimeoutSeconds` (`0` = unlimited, default).
+- New `operitHistoryFallback` (on by default): if the stream ends without `assistant_done`, poll `GET /api/web/chats/{id}/messages` and recover the reply, stripping the `<think>` block.
+- `OperitChatClient` used to swallow `event:error` silently; it now logs a warning.
+
+## v1.4.0 — dialogue options decided by the AI
+
+- `dialogueChoiceMode = "ai"` (default): a dialogue with options (an NPC question, a shop prompt) is published to the AI, which has `professionTimeoutSeconds` to answer.
+- Falls back to the first option so a conversation never wedges; `first` / `random` / `off` also supported.
+- New `GET/POST /dialogue` endpoint and `wheatstook_dialogue` tool.
+
+## v1.3.0 — level 5/10 profession choice decided by the AI
+
+- `professionMode = "ai"` (default): both options plus the skill/level are published, the AI answers, and the choice falls back to random so the night never hangs.
+- `left` / `right` / `random` / `off` also supported.
+- New `GET/POST /profession` endpoint, `wheatstook_profession` tool and `AiNotify` push channel.
+- The log and the in-game panel state which option was taken and who decided it.
+
+## v1.2.0 — day-end screens are clicked automatically
+
+After a farmhand sleeps, the skill level-up boxes, the profession choice and the shipping summary block the night, and the host **cannot click them for another player**.
+
+- Handles `LevelUpMenu`, `ShippingMenu`, `ConfirmationDialog` and `DialogueBox`.
+- Only acts inside the day-end window (`isInBed`, 30 s after `/sleep`, or re-armed while a screen is up) with a 20-tick cooldown — ordinary menus are never touched.
+- New `autoConfirmDayEnd` setting (on by default), `POST /autoconfirm` endpoint and `wheatstook_autoconfirm` tool, toggleable without a restart.
+
+---
+
+## Other fixes since v1.1.0
+
+(shipped under the 1.1.0 manifest version, never released separately)
+
+- **Passing the night** now uses the real bed interaction (fixes "everyone slept but the night never passed")
+- `/chat` uses the vanilla player chat broadcast (fixes "the message only shows in the console")
+- The in-game chat panel **accepts Chinese input (IME)**
+- **`ForceWarp`**: change location by hand — `Game1.warpFarmer` was measured to be a no-op for this farmhand
+- `/warp` accepts the `location=home` alias (a cabin's real name is a UUID)
+- `/move` is refused while in bed; `/awake` steps off the bed before clearing the flag
+- NPC dialogue, `area` batch harvest/water, dropped-item detection
+- Memory (`/memory`), gift reactions (`/react`), event packaging, Nexus-id → link
+- `/status` reads the version from the manifest instead of a hard-coded string
+
+---
+
+## New settings (`config.json`)
+
+```jsonc
+"autoConfirmDayEnd": true,          // click day-end screens automatically
+"professionMode": "ai",             // ai / left / right / random / off
+"professionTimeoutSeconds": 45,     // seconds to wait for the AI
+"dialogueChoiceMode": "ai",         // ai / first / random / off
+"operitReplyTimeoutSeconds": 0,     // 0 = never cut off the reply
+"operitHistoryFallback": true,      // recover the reply from the chat history
+```
+
+Every field is documented in `config.example.json`.
 
 ## Install
 
-1. Install [SMAPI](https://smapi.io/) (Stardew Valley 1.6+ / SMAPI 4.0+).
-2. Unzip `WheatStook.zip`, put the `WheatStook` folder into `Stardew Valley/Mods/`.
-3. Launch the game via SMAPI.
+1. Install **SMAPI 4.x**.
+2. Unzip `WheatStook-v1.4.1.zip` and drop the `WheatStook/` folder into `Stardew Valley/Mods/`.
+3. Launch the game; defaults are written to `Mods/WheatStook/config.json`.
+4. For the co-op AI, unzip `-mcp_bridge.zip` and run `mcp_bridge/launcher.bat`.
 
-## Co-op + AI (advanced, optional)
+## License
 
-Both instances (host / farmhand) share one `config.json` — copy from `config.example.json`, minimum:
-
-```json
-{
-  "Mode": "operit",
-  "HostPort": 58331,
-  "FarmhandPort": 58332,
-  "OperitBridgeUrl": "http://127.0.0.1:8000",
-  "OperitBridgeToken": "<shared token>"
-}
-```
-
-Unzip `WheatStook-mcp_bridge.zip`, double-click `launcher.bat` to start the bridge (server `:8000` + client), then point operit at `http://<PC-LAN-IP>:8000/mcp` (`Authorization: Bearer <token>`). Run `gen_token.bat` once to create `token.txt`. See the repo README for full details.
-
-## Platform
-
-Windows / macOS / Linux.
+AGPL-3.0 (including the §13 network clause). This project is a **clean-room rewrite** with no upstream code; see `NOTICE`.

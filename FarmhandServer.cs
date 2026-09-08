@@ -1617,10 +1617,23 @@ public class FarmhandServer
         {
             var f = Game1.player;
             if (f is null) return;
-            try { f.isInBed.Value = false; }
+            try
+            {
+                // Stepping off the bed is what actually clears the sleep. While the farmer
+                // stands on a bed tile the game re-asserts isInBed, so clearing the flag
+                // alone bounces straight back to true (verified live 3/3; warping off the
+                // bed cleared it and restarted the clock instead).
+                var loc = f.currentLocation;
+                if (loc is not null)
+                {
+                    var (sx, sy) = PickAdjacentStandingTile(loc, f.TilePoint.X, f.TilePoint.Y);
+                    f.Position = new Vector2(sx * 64 + 32, sy * 64 + 32);
+                }
+                f.isInBed.Value = false;
+            }
             catch (Exception ex) { _monitor.Log($"awake failed: {ex.Message}", LogLevel.Warn); }
         });
-        return new { ok = true, inBed = false, note = "cleared the in-bed flag (escape hatch for a half-sleep that blocks the day)." };
+        return new { ok = true, inBed = false, note = "stepped off the bed and cleared the in-bed flag." };
     }
 
     /// <summary>Home location + its bed tile. Falls back to the current location.</summary>

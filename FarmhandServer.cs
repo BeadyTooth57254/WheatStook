@@ -53,6 +53,9 @@ public class FarmhandServer
     /// <summary>Custom gift-reaction rules (set by ModEntry); backs /react.</summary>
     public ReactionStore? Reactions { get; set; }
 
+    /// <summary>Installed-mod knowledge base (set by ModEntry); backs /mods.</summary>
+    public ModKnowledgeBase? Mods { get; set; }
+
 
     public FarmhandServer(ModConfig config, IMonitor monitor, bool isHost, IModHelper helper)
     {
@@ -242,6 +245,7 @@ public class FarmhandServer
                 ("GET", "/selftest") => HandleSelfTest(),
                 ("GET", "/bed") => HandleBed(),
                 ("GET", "/memory") => HandleMemoryRead(),
+                ("GET", "/mods") => HandleMods(ctx),
                 ("POST", "/move") => HandleMove(ctx),
                 ("POST", "/stop") => HandleStop(),
                 ("POST", "/face") => HandleFace(ctx),
@@ -1560,6 +1564,24 @@ public class FarmhandServer
         if (Memory is null) return new { ok = false, error = "memory not wired" };
         var entries = Memory.Snapshot();
         return new { ok = true, count = entries.Count, entries };
+    }
+
+    private object HandleMods(HttpListenerContext ctx)
+    {
+        if (Mods is null) return new { ok = false, error = "mod knowledge base not built yet (it is filled at game launch)" };
+        string q = ctx.Request.QueryString["q"] ?? "";
+        var results = Mods.Search(q);
+        return new
+        {
+            ok = true,
+            query = q,
+            count = results.Count,
+            mods = results.Take(60).Select(m => new
+            {
+                m.Name, m.UniqueID, m.Author, m.Version, m.IsContentPack,
+                m.NexusId, m.NexusUrl, m.Links, m.UpdateKeys
+            })
+        };
     }
 
     private object HandleMemoryWrite(HttpListenerContext ctx)

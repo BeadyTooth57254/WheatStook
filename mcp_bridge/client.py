@@ -113,6 +113,7 @@ ROUTES = {
     "sleep": ("POST", "/sleep", {"force": None}),
     "talk": ("POST", "/talk", {"target": None}),
     "memory": ("GET", "/memory", None),
+    "mods": ("GET", "/mods", {"q": None}),
     "memory_add": ("POST", "/memory", {"op": "add", "text": None}),
     "memory_journal": ("POST", "/memory", {"op": "journal", "text": None}),
     "react": ("POST", "/react", {"op": None, "item": None, "emote": None, "text": None}),

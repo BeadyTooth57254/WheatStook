@@ -29,6 +29,7 @@ public class ModKnowledgeBase
         {
             var m = mod.Manifest;
             if (m is null) continue;
+            var (nexusId, nexusUrl, links) = DeriveLinks(m.UpdateKeys ?? Array.Empty<string>());
             _mods.Add(new ModInfo
             {
                 Name = m.Name ?? string.Empty,
@@ -38,6 +39,9 @@ public class ModKnowledgeBase
                 Description = m.Description ?? string.Empty,
                 UpdateKeys = m.UpdateKeys ?? Array.Empty<string>(),
                 IsContentPack = m.ContentPackFor != null,
+                NexusId = nexusId,
+                NexusUrl = nexusUrl,
+                Links = links,
             });
         }
         _monitor.Log($"Mod knowledge base built: {_mods.Count} mods indexed (enableModKnowledge={true}).", LogLevel.Info);
@@ -65,5 +69,52 @@ public class ModKnowledgeBase
         public string Description { get; set; } = string.Empty;
         public string[] UpdateKeys { get; set; } = Array.Empty<string>();
         public bool IsContentPack { get; set; }
+
+        /// <summary>Nexus mod id from UpdateKeys (empty when the mod has none).</summary>
+        public string NexusId { get; set; } = string.Empty;
+
+        /// <summary>Ready-to-open Nexus page for this mod (empty when unknown).</summary>
+        public string NexusUrl { get; set; } = string.Empty;
+
+        /// <summary>All links derived from UpdateKeys (Nexus/GitHub/CurseForge/ModDrop).</summary>
+        public List<string> Links { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Turn a manifest's UpdateKeys into real URLs. UpdateKeys looks like
+    /// "Nexus:12345", "GitHub:owner/repo", "CurseForge:name", "ModDrop:name";
+    /// this is what lets the AI hand back a precise link instead of guessing.
+    /// </summary>
+    private static (string nexusId, string nexusUrl, List<string> links) DeriveLinks(string[] updateKeys)
+    {
+        string nexusId = string.Empty, nexusUrl = string.Empty;
+        var links = new List<string>();
+        foreach (var raw in updateKeys)
+        {
+            var key = (raw ?? string.Empty).Trim();
+            var sep = key.IndexOf(':');
+            if (sep <= 0) continue;
+            var kind = key.Substring(0, sep).Trim().ToLowerInvariant();
+            var value = key.Substring(sep + 1).Trim();
+            if (value.Length == 0) continue;
+            switch (kind)
+            {
+                case "nexus":
+                    nexusId = value;
+                    nexusUrl = $"https://www.nexusmods.com/stardewvalley/mods/{value}";
+                    links.Add(nexusUrl);
+                    break;
+                case "github":
+                    links.Add($"https://github.com/{value}");
+                    break;
+                case "curseforge":
+                    links.Add($"https://www.curseforge.com/stardewvalley/mods/{value}");
+                    break;
+                case "moddrop":
+                    links.Add($"https://www.moddrop.com/stardew-valley/mods/{value}");
+                    break;
+            }
+        }
+        return (nexusId, nexusUrl, links);
     }
 }

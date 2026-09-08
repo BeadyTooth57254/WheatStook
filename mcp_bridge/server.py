@@ -225,6 +225,12 @@ async def react(op: str = "list", item: str = "", emote: int = 4, text: str = ""
 
 
 @mcp.tool()
+async def mods(q: str = "") -> str:
+    """Search the installed-mod knowledge base (built at game launch). Each hit carries name, unique id, author, version, content-pack flag, the Nexus mod id and ready-to-open links (Nexus/GitHub/CurseForge/ModDrop) derived from the manifest's UpdateKeys. Empty q lists everything (capped at 60)."""
+    return await _tool("mods", {"q": q})
+
+
+@mcp.tool()
 async def emote(id: int) -> str:
     """Play an emote from the farmer (id 0-23, e.g. 12 heart, 8 exclamation)."""
     return await _tool("emote", {"id": id})

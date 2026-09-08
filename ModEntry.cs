@@ -209,6 +209,7 @@ public class ModEntry : Mod
             _server.ChatDisplay = DisplayAiChat;
             _server.Memory = _memory;
             _server.Reactions = _reactions;
+            _server.Mods = _mods;
             _server.Start();
         }
         _server?.Tick();
@@ -263,7 +264,7 @@ public class ModEntry : Mod
         }
         Monitor.Log($"{results.Count} mod(s) match '{query}':", LogLevel.Info);
         foreach (var m in results.Take(40))
-            Monitor.Log($"  [{m.Name}] v{m.Version}{(m.IsContentPack ? " (content pack)" : "")} — {m.UniqueID} | {m.Author}", LogLevel.Info);
+            Monitor.Log($"  [{m.Name}] v{m.Version}{(m.IsContentPack ? " (content pack)" : "")} — {m.UniqueID} | {m.Author}{(m.NexusUrl.Length > 0 ? $" | {m.NexusUrl}" : "")}", LogLevel.Info);
     }
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)

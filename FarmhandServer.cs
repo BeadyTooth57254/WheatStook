@@ -229,6 +229,7 @@ public class FarmhandServer
 
         StepMovement();
         AutoConfirmDayEnd();
+        HandleDialogueChoice();
     }
 
     // ── day-end menu automation ──
@@ -260,6 +261,15 @@ public class FarmhandServer
 
     /// <summary>Optional push channel: called once when a decision is waiting for the AI.</summary>
     public Action<string>? AiNotify { get; set; }
+
+    // pending dialogue choice (a question with options): the AI decides this one too
+    private DialogueBox? _pendingDialogue;
+    private int _pendingDialogueTicks;
+    private string[] _pendingDialogueOptions = Array.Empty<string>();
+
+    /// <summary>How to answer a dialogue that offers options: "ai" (ask, then fall back),
+    /// "first", "random", or "off" (leave it to a human).</summary>
+    public string DialogueChoiceMode { get; set; } = "ai";
 
     /// <summary>
     /// A farmhand that sleeps in co-op still gets the day-end screens — the skill
@@ -310,12 +320,6 @@ public class FarmhandServer
                 case ConfirmationDialog cd:
                     cd.confirm();
                     _monitor.Log("auto-confirm: 确认对话框 确定", LogLevel.Info);
-                    _autoConfirmCooldown = 20;
-                    break;
-
-                case DialogueBox db when db.responses is { Length: > 0 } && db.responseCC is { Count: > 0 }:
-                    ClickComponent(db, db.responseCC[0]);
-                    _monitor.Log("auto-confirm: 问答对话 选第一项", LogLevel.Info);
                     _autoConfirmCooldown = 20;
                     break;
             }
@@ -494,6 +498,122 @@ public class FarmhandServer
         };
     }
 
+    /// <summary>
+    /// A dialogue that offers options (an NPC question, a shop prompt, ...) blocks the
+    /// farmhand until one is picked. Publish the options so the AI can answer in
+    /// character, and fall back after the timeout so it never wedges.
+    /// </summary>
+    private void HandleDialogueChoice()
+    {
+        if (!Context.IsWorldReady || Game1.player is null) return;
+
+        string mode = (DialogueChoiceMode ?? "ai").Trim().ToLowerInvariant();
+        if (mode == "off") return;
+
+        if (Game1.activeClickableMenu is not DialogueBox box
+            || box.responses is not { Length: > 0 }
+            || box.responseCC is not { Count: > 0 })
+        {
+            _pendingDialogue = null;
+            _pendingDialogueTicks = 0;
+            return;
+        }
+
+        if (!ReferenceEquals(_pendingDialogue, box))
+        {
+            _pendingDialogue = box;
+            _pendingDialogueOptions = box.responses.Select(r => r.responseText ?? "?").ToArray();
+            _pendingDialogueTicks = _pendingTimeoutTicks;
+
+            string options = DescribeResponses();
+            _monitor.Log($"对话选项: {options} — 等 AI 决定 (最多 {_pendingDialogueTicks / 60}s)", LogLevel.Info);
+            ChatDisplay?.Invoke($"【对话】{options}");
+            AiNotify?.Invoke($"星露谷里有人问我：{options}。用 wheatstook_dialogue() 看选项，wheatstook_dialogue(choice=编号) 回答。");
+        }
+
+        switch (mode)
+        {
+            case "first":
+                ResolveDialogue(0, "配置 first");
+                return;
+            case "random":
+                ResolveDialogue(Random.Shared.Next(_pendingDialogueOptions.Length), "配置 random");
+                return;
+        }
+
+        if (--_pendingDialogueTicks <= 0)
+            ResolveDialogue(0, "AI 没回话，默认第一项");
+    }
+
+    /// <summary>Click the chosen dialogue response.</summary>
+    private void ResolveDialogue(int index, string reason)
+    {
+        var box = _pendingDialogue;
+        var options = _pendingDialogueOptions;
+        _pendingDialogue = null;
+        _pendingDialogueTicks = 0;
+        if (box is null) return;
+        try
+        {
+            var buttons = box.responseCC;
+            if (buttons is not { Count: > 0 }) return;
+            if (index < 0 || index >= buttons.Count) index = 0;
+            ClickComponent(box, buttons[index]);
+            string text = index < options.Length ? options[index] : "?";
+            _monitor.Log($"对话选项: 选了「{text}」（{reason}）", LogLevel.Info);
+            ChatDisplay?.Invoke($"【对话】选了「{text}」");
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"dialogue click failed: {ex.Message}", LogLevel.Warn);
+        }
+    }
+
+    private string DescribeResponses()
+    {
+        if (_pendingDialogueOptions.Length == 0) return "几个选项";
+        return string.Join("  /  ", _pendingDialogueOptions.Select((t, i) => $"[{i}] {t}"));
+    }
+
+    /// <summary>
+    /// GET  /dialogue → what is being asked right now, if anything.
+    /// POST /dialogue {"choice": 0|1|...|"first"|"random"} → answer it.
+    /// </summary>
+    private object HandleDialogue(HttpListenerContext ctx)
+    {
+        if (ctx.Request.HttpMethod == "POST")
+        {
+            var p = ReadJson(ctx);
+            if (p.ContainsKey("choice"))
+            {
+                if (_pendingDialogue is null)
+                    return new { ok = false, error = "no dialogue choice is waiting right now" };
+
+                string raw = Get(p, "choice", "").Trim().ToLowerInvariant();
+                int index = raw switch
+                {
+                    "first" or "0" => 0,
+                    "random" => Random.Shared.Next(_pendingDialogueOptions.Length),
+                    _ => int.TryParse(raw, out int n) ? n : -1,
+                };
+                if (index < 0 || index >= _pendingDialogueOptions.Length)
+                    throw new InvalidOperationException($"choice must be 0..{_pendingDialogueOptions.Length - 1}, first or random");
+
+                Enqueue(() => ResolveDialogue(index, "AI 决定"));
+                return new { ok = true, chose = index, text = _pendingDialogueOptions[index] };
+            }
+        }
+
+        if (_pendingDialogue is null) return new { ok = true, pending = false };
+        return new
+        {
+            ok = true,
+            pending = true,
+            secondsLeft = _pendingDialogueTicks / 60,
+            options = _pendingDialogueOptions.Select((t, i) => new { index = i, text = t }).ToArray(),
+        };
+    }
+
     private void StepMovement()
     {
         if (_path is not { Count: > 0 } || !Context.IsWorldReady || Game1.player is null) return;
@@ -555,6 +675,8 @@ public class FarmhandServer
                 ("POST", "/autoconfirm") => HandleAutoConfirm(ctx),
                 ("GET", "/profession") => HandleProfession(ctx),
                 ("POST", "/profession") => HandleProfession(ctx),
+                ("GET", "/dialogue") => HandleDialogue(ctx),
+                ("POST", "/dialogue") => HandleDialogue(ctx),
                 ("POST", "/talk") => HandleTalk(ctx),
                 ("POST", "/memory") => HandleMemoryWrite(ctx),
                 ("POST", "/react") => HandleReact(ctx),

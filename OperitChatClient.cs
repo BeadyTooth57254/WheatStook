@@ -113,6 +113,14 @@ public class OperitChatClient
                 continue;
 
             string data = line.Substring(5).Trim();
+            if (eventType == "error")
+            {
+                // Operit reports its own failures on the stream (e.g. a cold agent:
+                // "Timed out while waiting for response stream"). Ignoring it made the
+                // forward look silent; say so instead.
+                _monitor.Log($"Operit reply stream error: {data}", LogLevel.Warn);
+                return null;
+            }
             if (eventType == "assistant_done")
             {
                 try

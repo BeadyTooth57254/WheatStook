@@ -219,6 +219,15 @@ async def profession(choice: str = "") -> str:
 
 
 @mcp.tool()
+async def dialogue(choice: str = "") -> str:
+    """Dialogue options — the AI answers them in character. Call with no argument to see what is being asked (the options and seconds left), then call again with choice="0"/"1"/... to pick one ("first" or "random" also work). The farmhand waits up to professionTimeoutSeconds and then takes the first option, so the conversation never wedges."""
+    body: dict = {}
+    if choice:
+        body["choice"] = choice
+    return await _tool("dialogue", body)
+
+
+@mcp.tool()
 async def talk(target: str = "") -> str:
     """Talk to an NPC: triggers their dialogue (they face you and speak). target is an NPC name, or empty for the nearest NPC in the current location."""
     return await _tool("talk", {"target": target})

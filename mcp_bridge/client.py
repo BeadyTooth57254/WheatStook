@@ -114,6 +114,7 @@ ROUTES = {
     "awake": ("POST", "/awake", None),
     "autoconfirm": ("POST", "/autoconfirm", {"enabled": None}),
     "profession": ("POST", "/profession", {"choice": None}),
+    "dialogue": ("POST", "/dialogue", {"choice": None}),
     "talk": ("POST", "/talk", {"target": None}),
     "memory": ("GET", "/memory", None),
     "mods": ("GET", "/mods", {"q": None}),

@@ -62,6 +62,9 @@
   "professionTimeoutSeconds": 45,
   "_说明_professionTimeoutSeconds": "ai 模式下等 AI 回话的秒数（默认45，最少5）。超时后随机选一个并写进日志。",
 
+  "dialogueChoiceMode": "ai",
+  "_说明_dialogueChoiceMode": "对话选项怎么选（默认 ai=AI 临时决定）。NPC 提问/商店问答这类带选项的对话会卡住 farmhand 直到有人点。ai=把选项报给 AI 并等它回话（同样 professionTimeoutSeconds 秒），超时默认选第一项；也可写死 first/random，或 off=留给真人点。AI 用 wheatstook_dialogue 看选项并回答。",
+
   "enableAutoCompat": false,
   "_说明_enableAutoCompat": "自动兼容层（默认关）。开=启动时检测到会改变游戏世界的模组（加戒指槽/超大背包/自定义作物/新地区/职业循环等，按 UniqueId 识别，不看文件夹名）就自动激活对应兼容 profile，并把激活列表写进 /state，让 AI 知道这农场不是原版。",
   "compatOverrides": null,

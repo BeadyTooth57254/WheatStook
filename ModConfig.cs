@@ -81,6 +81,14 @@ public class ModConfig
     public string professionMode { get; set; } = "ai";
     public int professionTimeoutSeconds { get; set; } = 45;
 
+    // --- Dialogue options ---
+    // When a dialogue offers choices (an NPC question, a shop prompt), the farmhand is
+    // blocked until one is picked. "ai" (default) publishes the options and waits for
+    // the AI to answer, falling back to the first option after professionTimeoutSeconds;
+    // "first" / "random" force one, "off" leaves it to a human. Answer live with
+    // POST /dialogue or the wheatstook_dialogue tool.
+    public string dialogueChoiceMode { get; set; } = "ai";
+
     // --- Auto-compatibility layer ---
     // When enableAutoCompat is on, 麦垛 detects installed mods that change
     // world state (ring slots, backpack, custom crops/regions, professions, ...)

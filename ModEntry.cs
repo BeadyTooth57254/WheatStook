@@ -214,6 +214,7 @@ public class ModEntry : Mod
             _server.AutoConfirm = _config!.autoConfirmDayEnd;
             _server.ProfessionMode = _config!.professionMode;
             _server.ProfessionTimeoutSeconds = _config!.professionTimeoutSeconds;
+            _server.DialogueChoiceMode = _config!.dialogueChoiceMode;
             _server.AiNotify = SendAiMessage;
             _server.Start();
         }

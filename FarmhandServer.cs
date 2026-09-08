@@ -1816,10 +1816,29 @@ public class FarmhandServer
         string message = GetReq<string>(ReadJson(ctx), "message");
         Enqueue(() =>
         {
-            Game1.chatBox?.addMessage(message, Color.White);   // keep the vanilla channel (harmless)
-            ChatDisplay?.Invoke(message);                      // route to the mod's player-visible panel
+            // Broadcast through the vanilla player-chat path so the line lands in EVERY
+            // player's chat box. ChatBox.addMessage only paints this farmhand's own chat
+            // box, which is why the AI's messages were visible only in the SMAPI console.
+            bool broadcast = false;
+            try
+            {
+                if (Game1.chatBox is not null)
+                {
+                    Game1.chatBox.textBoxEnter(message);
+                    broadcast = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _monitor.Log($"chat broadcast failed ({ex.Message}); falling back to the local chat box.", LogLevel.Warn);
+            }
+            if (!broadcast)
+            {
+                try { Game1.chatBox?.addMessage(message, Color.White); } catch { }
+            }
+            ChatDisplay?.Invoke(message);   // this instance's own panel as well
         });
-        return new { ok = true, message };
+        return new { ok = true, message, note = "broadcast via the vanilla chat path (all players) + this instance's panel." };
     }
 
     private object HandleSelect(HttpListenerContext ctx)

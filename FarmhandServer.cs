@@ -1813,6 +1813,10 @@ public class FarmhandServer
         var p = ReadJson(ctx);
         string loc = GetReq<string>(p, "location");
         int x = Get(p, "x", 10), y = Get(p, "y", 10);
+        // "home" is a convenience alias: in co-op a cabin's real name is its UUID and
+        // several cabins share the display name "Cabin", so the plain name is ambiguous.
+        if (string.Equals(loc, "home", StringComparison.OrdinalIgnoreCase))
+            loc = Game1.player?.homeLocation?.Value ?? loc;
         var target = Game1.getLocationFromName(loc);
         if (target is null) throw new InvalidOperationException($"unknown location '{loc}'");
         Enqueue(() => ForceWarp(Game1.player, target, x, y));

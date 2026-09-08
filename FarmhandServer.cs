@@ -56,6 +56,9 @@ public class FarmhandServer
     /// <summary>Installed-mod knowledge base (set by ModEntry); backs /mods.</summary>
     public ModKnowledgeBase? Mods { get; set; }
 
+    /// <summary>This mod's manifest version, set by ModEntry so /status never lies.</summary>
+    public string ModVersion { get; set; } = "unknown";
+
 
     public FarmhandServer(ModConfig config, IMonitor monitor, bool isHost, IModHelper helper)
     {
@@ -332,7 +335,7 @@ public class FarmhandServer
     {
         ok = true,
         server = "WheatStook",
-        version = "1.0.0",
+        version = ModVersion,
         port = Port,
         role = _isHost ? "HOST" : "FARMHAND",
         isHost = _isHost,

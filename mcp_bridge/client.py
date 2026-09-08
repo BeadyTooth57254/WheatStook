@@ -173,7 +173,7 @@ async def session(uri):
         if hello.get("type") == "unauthorized":
             log.error("Bridge rejected token — check WHEATSTOOK_BRIDGE_TOKEN")
             raise RuntimeError("unauthorized")
-        log.info("Connected to bridge (%s)", hello.get("game"))
+        log.info("Connected to bridge %s (game=%s)", uri, hello.get("game"))
         async for raw in ws:
             try:
                 msg = json.loads(raw)

@@ -210,6 +210,7 @@ public class ModEntry : Mod
             _server.Memory = _memory;
             _server.Reactions = _reactions;
             _server.Mods = _mods;
+            _server.ModVersion = ModManifest.Version.ToString();
             _server.Start();
         }
         _server?.Tick();

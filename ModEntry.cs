@@ -214,6 +214,7 @@ public class ModEntry : Mod
             _server.Start();
         }
         _server?.Tick();
+        _chatHud?.Update();
     }
 
     private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
@@ -286,8 +287,13 @@ public class ModEntry : Mod
             ShowHelp();
             return;
         }
-        // Keys are consumed by the panel while it is open (no key-suppression API here).
-        _chatHud?.HandleKey(e.Button);
+        // While the panel is open, keep the game from reacting to the keys the text box
+        // is consuming (otherwise typing "w" would also walk the farmer).
+        if (_chatHud?.IsOpen == true)
+        {
+            if (e.Button == SButton.Escape) _chatHud.Close();
+            Helper.Input.Suppress(e.Button);
+        }
     }
 
     private static SButton ParseKey(string name, SButton fallback)

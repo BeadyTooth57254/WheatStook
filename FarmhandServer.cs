@@ -1557,17 +1557,24 @@ public class FarmhandServer
             return new { ok = false, error = $"no bed found (homeLocation='{f.homeLocation?.Value}')" };
         var (sx, sy) = PickAdjacentStandingTile(home, bx, by);
 
-        // Step 1 (this tick): stand next to the bed. Step 2 (a few ticks later): use it.
-        // GameLocation.checkAction on the bed tile is exactly what a player click does,
-        // and that is what starts the vanilla sleep + co-op new-day handshake. Setting
-        // isInBed alone left the farmhand flagged in-bed while standing in a field, and
-        // the night never passed — the bug this replaces.
+        // Step 1 (this tick): get into the home location and stand next to the bed.
+        // Game1.warpFarmer is a no-op here, so this uses the forced warp. Step 2 (a few
+        // ticks later): use the bed — GameLocation.checkAction on the bed tile is exactly
+        // what a player click does, and that is what starts the vanilla sleep + co-op
+        // new-day handshake. Setting isInBed alone left the farmhand flagged in-bed while
+        // standing in a field, and the night never passed — the bug this replaces.
+        int face = by > sy ? 2 : by < sy ? 0 : bx > sx ? 1 : 3;
         Enqueue(() =>
         {
             var farmer = Game1.player;
             if (farmer is null) return;
-            if (farmer.currentLocation?.Name != home.Name || farmer.TilePoint.X != sx || farmer.TilePoint.Y != sy)
-                Game1.warpFarmer(home.Name, sx, sy, false);
+            if (!ReferenceEquals(farmer.currentLocation, home))
+                ForceWarp(farmer, home, sx, sy, face);
+            else
+            {
+                farmer.Position = new Vector2(sx * 64 + 32, sy * 64 + 32);
+                farmer.FacingDirection = face;
+            }
         });
         EnqueueAfter(4, () =>
         {
@@ -1806,8 +1813,37 @@ public class FarmhandServer
         var p = ReadJson(ctx);
         string loc = GetReq<string>(p, "location");
         int x = Get(p, "x", 10), y = Get(p, "y", 10);
-        Enqueue(() => Game1.warpFarmer(loc, x, y, false));
-        return new { ok = true, location = loc, x, y };
+        var target = Game1.getLocationFromName(loc);
+        if (target is null) throw new InvalidOperationException($"unknown location '{loc}'");
+        Enqueue(() => ForceWarp(Game1.player, target, x, y));
+        return new { ok = true, location = target.Name, x, y, method = "forced" };
+    }
+
+    /// <summary>
+    /// Move the farmhand between locations by hand.
+    ///
+    /// Game1.warpFarmer silently never completes for this farmhand: it logs
+    /// "Warping to X" and then nothing — no fade, no position change, no error, with
+    /// no path and no menu active (verified live with repeated sampling, and it fails
+    /// for Town/Farm just as much as for the cabin). Direct Position writes DO work
+    /// (the mod's own walking proves it), so set the location and position ourselves
+    /// and drop any request that is stuck mid-fade.
+    /// </summary>
+    private void ForceWarp(Farmer? farmer, GameLocation? target, int tx, int ty, int facing = 2)
+    {
+        if (farmer is null || target is null) return;
+        try
+        {
+            Game1.locationRequest = null;
+            farmer.currentLocation = target;
+            Game1.currentLocation = target;
+            farmer.Position = new Vector2(tx * 64 + 32, ty * 64 + 32);
+            farmer.FacingDirection = facing;
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"forced warp failed: {ex.Message}", LogLevel.Warn);
+        }
     }
 
     private object HandleChat(HttpListenerContext ctx)

@@ -1345,6 +1345,11 @@ public class FarmhandServer
         if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
         var p = ReadJson(ctx);
         int tx = GetReq<int>(p, "x"), ty = GetReq<int>(p, "y");
+        // A farmer flagged in-bed must not be walked around: the old /sleep set the flag
+        // without a real sleep, and move_to happily drove the "sleeping" farmhand across
+        // the farm — which is how that bug was spotted. Refuse instead of pretending.
+        if (Game1.player?.isInBed?.Value == true)
+            return new { ok = false, error = "farmer is in bed — POST /awake first to stand up." };
         // FindPath is a bounded BFS on tile passability (no mutable state), so it's
         // safe to run synchronously to report the real step count. Only the field
         // writes stay on the game thread via Enqueue.

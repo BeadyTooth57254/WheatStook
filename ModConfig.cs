@@ -24,6 +24,14 @@ public class ModConfig
     public string operitWebChatId { get; set; } = "";
     public string operitWebToken { get; set; } = "";
     public bool forwardReadOperitReply { get; set; } = false;
+    // How long to wait for Operit's reply stream before giving up. 0 = never cut it off
+    // (default: an AI that is still thinking must not be disconnected mid-answer; only
+    // the initial connect has a 15s cap).
+    public int operitReplyTimeoutSeconds { get; set; } = 0;
+    // When the SSE stream dies before assistant_done (Operit reports "Timed out while
+    // waiting for response stream" for a cold agent, then answers anyway — verified
+    // live), poll the chat history for the new reply instead of losing it.
+    public bool operitHistoryFallback { get; set; } = true;
     public string operitForwardFormat { get; set; } = "【星露谷·{sender}】{message}";
 
     // --- Map / state reading ---

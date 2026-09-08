@@ -1,4 +1,5 @@
 using System.IO;
+using HarmonyLib;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -38,6 +39,7 @@ public class ModEntry : Mod
     private ChatHud? _chatHud;
     private MemoryStore? _memory;
     private ReactionLayer? _reaction;
+    private ReactionStore? _reactions;
     private SButton _chatKey = SButton.OemTilde;
     private SButton _bridgeKey = SButton.F8;
     private SButton _helpKey = SButton.F1;
@@ -55,11 +57,28 @@ public class ModEntry : Mod
         var modDir = Path.GetDirectoryName(typeof(ModEntry).Assembly.Location) ?? ".";
         _memory = new MemoryStore(Path.Combine(modDir, "wheatstook_memory.txt"), Monitor);
         _reaction = new ReactionLayer(Monitor, SendAiMessage, s => _chatHud?.AddMessage(s), () => _config!.reactionEnabled);
+        _reactions = new ReactionStore(Path.Combine(modDir, "wheatstook_reactions.json"), Monitor);
+
+        // Emote watcher: SMAPI has no emote event, so a Harmony postfix on
+        // Farmer.doEmote is the only way to see another player's emote. Wrapped so a
+        // patch failure disables the feature instead of breaking the game.
+        try
+        {
+            new Harmony(ModManifest.UniqueID).PatchAll(typeof(EmoteWatcher).Assembly);
+            EmoteWatcher.OnEmote = OnOtherEmote;
+            Monitor.Log("Emote watcher patched.", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            EmoteWatcher.OnEmote = null;
+            Monitor.Log($"Emote watcher patch failed (emote messages disabled): {ex.Message}", LogLevel.Warn);
+        }
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
         helper.Events.GameLoop.DayStarted += OnDayStarted;
+        helper.Events.Player.InventoryChanged += OnInventoryChanged;
         helper.Events.Input.ButtonPressed += OnButtonPressed;
         helper.Events.Display.RenderedHud += OnRenderedHud;
 
@@ -92,6 +111,11 @@ public class ModEntry : Mod
             "wheatstook_compat",
             "Explain the auto-compat framework: which things are auto-covered (runtime data) and which need a hand-written adapter, plus the active profiles.",
             OnCompatCommand);
+
+        helper.ConsoleCommands.Add(
+            "wheatstook_react",
+            "Manage gift reactions. Usage: wheatstook_react list | set <item> <emoteId> <text> | del <item> | match <item>",
+            OnReactCommand);
 
         Monitor.Log($"WheatStook (clean-room) loaded. Mode={_config.Mode}, forwardToOperitChat={_config.forwardToOperitChat}", LogLevel.Info);
     }
@@ -183,6 +207,8 @@ public class ModEntry : Mod
             _server.CompatSummary = _compat?.Describe() ?? "";
             _server.CompatRules = _compatRules;
             _server.ChatDisplay = DisplayAiChat;
+            _server.Memory = _memory;
+            _server.Reactions = _reactions;
             _server.Start();
         }
         _server?.Tick();
@@ -347,6 +373,45 @@ public class ModEntry : Mod
         Monitor.Log($"[详情] 见仓库 COMPAT.md; 内置 profile 数: {_compat?.ProfileCount ?? 0}", LogLevel.Info);
     }
 
+    private void OnReactCommand(string command, string[] args)
+    {
+        if (_reactions is null) return;
+        if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+        {
+            var all = _reactions.All();
+            Monitor.Log($"{all.Count} 条礼物反应规则 (giftReactionsEnabled={_config?.giftReactionsEnabled}):", LogLevel.Info);
+            foreach (var r in all)
+                Monitor.Log($"  [{r.item}] emote={r.emote} text={r.text}", LogLevel.Info);
+            return;
+        }
+        switch (args[0].ToLowerInvariant())
+        {
+            case "set":
+                if (args.Length < 2)
+                {
+                    Monitor.Log("用法: wheatstook_react set <item> [emoteId] [text...]", LogLevel.Info);
+                    return;
+                }
+                int emote = args.Length >= 3 && int.TryParse(args[2], out var parsed) ? parsed : 4;
+                string text = args.Length >= 4 ? string.Join(' ', args.Skip(3)) : "";
+                _reactions.Set(args[1], emote, text);
+                Monitor.Log($"已设置 [{args[1]}] emote={emote} text={text}", LogLevel.Info);
+                break;
+            case "del":
+                if (args.Length < 2) { Monitor.Log("用法: wheatstook_react del <item>", LogLevel.Info); return; }
+                Monitor.Log(_reactions.Remove(args[1]) ? "已删除" : "没找到该规则", LogLevel.Info);
+                break;
+            case "match":
+                if (args.Length < 2) { Monitor.Log("用法: wheatstook_react match <item>", LogLevel.Info); return; }
+                var hit = _reactions.Match(args[1]);
+                Monitor.Log(hit is null ? "无匹配规则" : $"匹配: [{hit.item}] emote={hit.emote} text={hit.text}", LogLevel.Info);
+                break;
+            default:
+                Monitor.Log("用法: wheatstook_react list | set <item> [emoteId] [text...] | del <item> | match <item>", LogLevel.Info);
+                break;
+        }
+    }
+
     private void DisplayAiChat(string message)
     {
         // The AI said something in-game. The vanilla Game1.chatBox only renders on one
@@ -393,5 +458,85 @@ public class ModEntry : Mod
     private void OnDayStarted(object? sender, DayStartedEventArgs e)
     {
         _reaction?.OnDayStarted();
+        if (_config?.journalEnabled == true)
+            _memory?.Journal($"新的一天 · {Game1.Date?.Season} {Game1.Date?.DayOfMonth}日 · 金币 {Game1.player?.Money}");
+    }
+
+    /// <summary>
+    /// Items the farmhand receives are packaged as a chat line, and a matching rule
+    /// turns it into a custom gift reaction (emote + line). Gated by
+    /// giftReactionsEnabled so a busy harvest day doesn't spam the panel unless the
+    /// player asked for it.
+    /// </summary>
+    private void OnInventoryChanged(object? sender, InventoryChangedEventArgs e)
+    {
+        try
+        {
+            if (e?.Player is null) return;
+            if (_config?.giftReactionsEnabled != true) return;
+            foreach (var item in e.Added)
+            {
+                if (item is null) continue;
+                string msg = $"【收到】{item.DisplayName} x{item.Stack}";
+                _chatHud?.AddMessage(msg);
+                if (_config.journalEnabled) _memory?.Journal(msg);
+
+                var rule = _reactions?.Match(item.DisplayName);
+                if (rule is null) continue;
+                if (!string.IsNullOrWhiteSpace(rule.text))
+                    _chatHud?.AddMessage($"{(string.IsNullOrWhiteSpace(Game1.player?.Name) ? "麦垛" : Game1.player!.Name)}: {rule.text}");
+                Game1.player?.doEmote(rule.emote);
+                _memory?.Journal($"对「{item.DisplayName}」的反应: {rule.text}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log($"OnInventoryChanged: {ex.Message}", LogLevel.Warn);
+        }
+    }
+
+    /// <summary>Another player emoted (see EmoteWatcher); package it as a line.</summary>
+    private void OnOtherEmote(string farmerName, int emoteId)
+    {
+        try
+        {
+            if (Game1.player is not null && farmerName.Equals(Game1.player.Name, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (_config?.journalEnabled != true && _config?.giftReactionsEnabled != true) return;
+            string msg = $"【表情】{farmerName} 做了个表情 (id={emoteId})";
+            _chatHud?.AddMessage(msg);
+            if (_config.journalEnabled) _memory?.Journal(msg);
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log($"OnOtherEmote: {ex.Message}", LogLevel.Warn);
+        }
+    }
+}
+
+/// <summary>
+/// Harmony postfix on Farmer.doEmote. SMAPI exposes no emote event, so this is the
+/// only way to notice that the human pressed an emote key. Everything is guarded:
+/// if the patch never applies, OnEmote stays null and the feature is simply off.
+/// </summary>
+internal static class EmoteWatcher
+{
+    internal static Action<string, int>? OnEmote;
+
+    [HarmonyPatch(typeof(Farmer), nameof(Farmer.doEmote))]
+    internal static class Patch
+    {
+        private static void Postfix(Farmer __instance, int whichEmote)
+        {
+            try
+            {
+                if (__instance is null) return;
+                OnEmote?.Invoke(__instance.Name ?? "?", whichEmote);
+            }
+            catch
+            {
+                // Never let a reaction break the game loop.
+            }
+        }
     }
 }

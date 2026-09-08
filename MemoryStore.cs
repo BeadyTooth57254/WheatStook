@@ -65,6 +65,27 @@ public class MemoryStore
         if (removed) Save();
     }
 
+    /// <summary>Append a timestamped journal line (shared-experience events).</summary>
+    public void Journal(string text)
+    {
+        var t = text?.Trim();
+        if (string.IsNullOrWhiteSpace(t)) return;
+        Add($"[{DateTime.Now:yyyy-MM-dd HH:mm}] {t}");
+    }
+
+    /// <summary>Snapshot of the current entries (for the HTTP endpoint).</summary>
+    public List<string> Snapshot()
+    {
+        lock (_lock) return new List<string>(_entries);
+    }
+
+    /// <summary>Drop every entry (POST /memory op=clear).</summary>
+    public void Clear()
+    {
+        lock (_lock) _entries.Clear();
+        Save();
+    }
+
     /// <summary>Formatted memory context, one memory per line (snapshot).</summary>
     public string Context()
     {

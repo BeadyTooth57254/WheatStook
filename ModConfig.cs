@@ -53,6 +53,18 @@ public class ModConfig
     // message the AI can react to. Off by default (on demand) to save tokens.
     public bool reactionEnabled { get; set; } = false;
 
+    // --- Shared-experience journal ---
+    // When true, notable events (items received, player emotes, new days) are
+    // appended to the memory file with a timestamp, so the AI can remember what
+    // happened together. Off by default (on demand) to keep the file short.
+    public bool journalEnabled { get; set; } = false;
+
+    // --- Gift reactions ---
+    // When true, receiving an item looks up a rule in wheatstook_reactions.json
+    // (set via the /react endpoint or wheatstook_react) and the farmhand emotes +
+    // says the configured line. Off by default.
+    public bool giftReactionsEnabled { get; set; } = false;
+
     // --- Auto-compatibility layer ---
     // When enableAutoCompat is on, 麦垛 detects installed mods that change
     // world state (ring slots, backpack, custom crops/regions, professions, ...)

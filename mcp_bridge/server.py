@@ -201,6 +201,30 @@ async def talk(target: str = "") -> str:
 
 
 @mcp.tool()
+async def memory() -> str:
+    """Read the AI's long-term memory (wheatstook_memory.txt): one entry per line. Journal lines (from shared experiences) carry a [yyyy-MM-dd HH:mm] stamp when journalEnabled is on."""
+    return await _tool("memory", {})
+
+
+@mcp.tool()
+async def remember(text: str) -> str:
+    """Add one line to the AI's long-term memory (persisted to wheatstook_memory.txt, deduplicated)."""
+    return await _tool("memory_add", {"text": text})
+
+
+@mcp.tool()
+async def journal(text: str) -> str:
+    """Append a timestamped journal line (a shared experience) to long-term memory. Use this to record things worth remembering about the day you two had."""
+    return await _tool("memory_journal", {"text": text})
+
+
+@mcp.tool()
+async def react(op: str = "list", item: str = "", emote: int = 4, text: str = "") -> str:
+    """Manage custom gift reactions (wheatstook_reactions.json). op: list | set (needs item + emote + text) | del (item) | match (item, to test). With giftReactionsEnabled on, receiving a matching item makes the farmhand perform the emote and say the line."""
+    return await _tool("react", {"op": op, "item": item, "emote": emote, "text": text})
+
+
+@mcp.tool()
 async def emote(id: int) -> str:
     """Play an emote from the farmer (id 0-23, e.g. 12 heart, 8 exclamation)."""
     return await _tool("emote", {"id": id})

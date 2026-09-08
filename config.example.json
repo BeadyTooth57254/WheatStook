@@ -49,6 +49,11 @@
   "reactionEnabled": false,
   "_说明_reactionEnabled": "是否让 AI 对游戏事件自动有反应（默认关，按需开）。目前每天清晨生成一行简讯（日期/金币/精力）发给 operit 并显示在面板；后续会补更多事件（升级、作物熟了、没体力等）。",
 
+  "journalEnabled": false,
+  "_说明_journalEnabled": "共同经历日志（默认关，按需开）。开=把值得记住的事（新的一天、收到的物品、别人的表情）带时间戳追加进 wheatstook_memory.txt，AI 之后能通过 /memory 读到，等于'记得你俩一起经历过的事'。",
+  "giftReactionsEnabled": false,
+  "_说明_giftReactionsEnabled": "送礼反应（默认关，按需开）。开=收到物品时在面板打一行【收到】，并且如果 wheatstook_reactions.json 里有匹配规则，就按规则做表情+说台词（规则可用 /react 端点或 wheatstook_react 命令添加）。",
+
   "enableAutoCompat": false,
   "_说明_enableAutoCompat": "自动兼容层（默认关）。开=启动时检测到会改变游戏世界的模组（加戒指槽/超大背包/自定义作物/新地区/职业循环等，按 UniqueId 识别，不看文件夹名）就自动激活对应兼容 profile，并把激活列表写进 /state，让 AI 知道这农场不是原版。",
   "compatOverrides": null,

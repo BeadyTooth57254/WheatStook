@@ -47,6 +47,12 @@ public class FarmhandServer
     /// invisible to the AI-farmhand view).</summary>
     public Action<string>? ChatDisplay;
 
+    /// <summary>Long-term memory store (set by ModEntry); backs /memory.</summary>
+    public MemoryStore? Memory { get; set; }
+
+    /// <summary>Custom gift-reaction rules (set by ModEntry); backs /react.</summary>
+    public ReactionStore? Reactions { get; set; }
+
 
     public FarmhandServer(ModConfig config, IMonitor monitor, bool isHost, IModHelper helper)
     {
@@ -235,6 +241,7 @@ public class FarmhandServer
                 ("GET", "/inventory") => HandleInventory(ctx),
                 ("GET", "/selftest") => HandleSelfTest(),
                 ("GET", "/bed") => HandleBed(),
+                ("GET", "/memory") => HandleMemoryRead(),
                 ("POST", "/move") => HandleMove(ctx),
                 ("POST", "/stop") => HandleStop(),
                 ("POST", "/face") => HandleFace(ctx),
@@ -247,6 +254,8 @@ public class FarmhandServer
                 ("POST", "/area") => HandleArea(ctx),
                 ("POST", "/sleep") => HandleSleep(ctx),
                 ("POST", "/talk") => HandleTalk(ctx),
+                ("POST", "/memory") => HandleMemoryWrite(ctx),
+                ("POST", "/react") => HandleReact(ctx),
                 ("POST", "/emote") => HandleEmote(ctx),
                 ("POST", "/warp") => HandleWarp(ctx),
                 ("POST", "/chat") => HandleChat(ctx),
@@ -1544,6 +1553,80 @@ public class FarmhandServer
             catch (Exception ex) { _monitor.Log($"talk checkAction failed: {ex.Message}", LogLevel.Warn); }
         });
         return new { ok = true, npc = name, x = nx, y = ny, queued = true, note = "NPC checkAction queued — they face you and say their line." };
+    }
+
+    private object HandleMemoryRead()
+    {
+        if (Memory is null) return new { ok = false, error = "memory not wired" };
+        var entries = Memory.Snapshot();
+        return new { ok = true, count = entries.Count, entries };
+    }
+
+    private object HandleMemoryWrite(HttpListenerContext ctx)
+    {
+        if (Memory is null) return new { ok = false, error = "memory not wired" };
+        var p = ReadJson(ctx);
+        string op = Get(p, "op", "add").ToLower();
+        string text = Get(p, "text", "");
+        switch (op)
+        {
+            case "add":
+                if (string.IsNullOrWhiteSpace(text)) return new { ok = false, error = "text required" };
+                Memory.Add(text);
+                return new { ok = true, op, count = Memory.Count };
+            case "journal":
+                if (string.IsNullOrWhiteSpace(text)) return new { ok = false, error = "text required" };
+                Memory.Journal(text);
+                return new { ok = true, op, count = Memory.Count };
+            case "del":
+            case "remove":
+                Memory.Remove(text);
+                return new { ok = true, op, count = Memory.Count };
+            case "clear":
+                Memory.Clear();
+                return new { ok = true, op, count = Memory.Count };
+            case "reload":
+                Memory.Load();
+                return new { ok = true, op, count = Memory.Count };
+            default:
+                return new { ok = false, error = $"unsupported op '{op}' (add|journal|del|clear|reload)" };
+        }
+    }
+
+    private object HandleReact(HttpListenerContext ctx)
+    {
+        if (Reactions is null) return new { ok = false, error = "reaction store not wired" };
+        var p = ReadJson(ctx);
+        string op = Get(p, "op", "list").ToLower();
+        switch (op)
+        {
+            case "list":
+                return new { ok = true, op, count = Reactions.Count, rules = Reactions.All() };
+            case "set":
+            {
+                string item = Get(p, "item", "");
+                if (string.IsNullOrWhiteSpace(item)) return new { ok = false, error = "item required" };
+                Reactions.Set(item, Get(p, "emote", 4), Get(p, "text", ""));
+                return new { ok = true, op, count = Reactions.Count };
+            }
+            case "del":
+            case "remove":
+            {
+                bool removed = Reactions.Remove(Get(p, "item", ""));
+                return new { ok = true, op, removed, count = Reactions.Count };
+            }
+            case "match":
+            {
+                string item = Get(p, "item", "");
+                var rule = Reactions.Match(item);
+                return new { ok = true, op, item, matched = rule != null, rule };
+            }
+            case "reload":
+                Reactions.Load();
+                return new { ok = true, op, count = Reactions.Count };
+            default:
+                return new { ok = false, error = $"unsupported op '{op}' (list|set|del|match|reload)" };
+        }
     }
 
     private object HandleArea(HttpListenerContext ctx)

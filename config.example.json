@@ -9,8 +9,8 @@
   "FarmhandPort": 58332,
   "_说明_FarmhandPort": "farmhand 实例绑定的端口（AI 操控的那个角色）。默认 58332。",
 
-  "OperitBridgeUrl": "http://127.0.0.1:8000",
-  "_说明_OperitBridgeUrl": "MCP 桥地址。默认本机 8000；手机连要填电脑局域网 IP，例如 http://192.168.100.236:8000。",
+  "OperitBridgeUrl": "http://127.0.0.1:14159",
+  "_说明_OperitBridgeUrl": "MCP 桥地址。默认本机 14159。为什么不用 8000 / 18000：IANA 官方端口表里 8000 已经给了 irdmi、18000 给了 biimenu，而且 8000 还是 uvicorn / FastAPI / Docker 镜像 / 一堆 MCP 工具的公共默认值，在开发机上老撞车；14159 在 IANA 表里完全没有主（对着官方 CSV 查过），也不在特权段，也不在 Windows 动态端口段（49152+）。顺带一提 14159 就是 π，和桥的 token 同源，好记。手机连要填电脑局域网 IP，例如 http://192.168.100.236:14159。端口以 mcp_bridge/launcher.bat 顶部的 BRIDGE_PORT 为准。",
   "OperitBridgeToken": "<你的共享 token>",
   "_说明_OperitBridgeToken": "和桥一致的 Bearer token。留空则桥不鉴权（不安全，不建议）。",
 

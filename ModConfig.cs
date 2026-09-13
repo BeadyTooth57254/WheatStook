@@ -15,7 +15,10 @@ public class ModConfig
     public int FarmhandPort { get; set; } = 58332;
 
     // --- MCP bridge (in-game chat panel <-> phone AI) ---
-    public string OperitBridgeUrl { get; set; } = "http://127.0.0.1:8000";
+    // Port 14159, not 8000 or 18000: both are already IANA-assigned (irdmi / biimenu)
+    // and 8000 is the default for uvicorn/FastAPI/Docker/MCP tooling too. 14159 is
+    // unassigned. mcp_bridge/launcher.bat sets the same number.
+    public string OperitBridgeUrl { get; set; } = "http://127.0.0.1:14159";
     public string OperitBridgeToken { get; set; } = "";
 
     // --- Operit native chat channel (default OFF, on demand) ---

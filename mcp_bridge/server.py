@@ -13,7 +13,7 @@ with WHEATSTOOK_BRIDGE_TOKEN) is up and a real game is running — the tunnel to
 gate. Optionally set WHEATSTOOK_BRIDGE_MCP_AUTH=1 to also require a Bearer token on /mcp.
 
 Env:
-    PORT                   (Zeabur provides; default 8000)
+    PORT                   (Zeabur provides; default 14159 for local runs)
     WHEATSTOOK_BRIDGE_TOKEN      shared secret, must match the PC client
     WHEATSTOOK_BRIDGE_MCP_AUTH   optional: if '1', require `Authorization: Bearer <token>` on /mcp
 """
@@ -36,7 +36,13 @@ TOKEN = os.environ.get("WHEATSTOOK_BRIDGE_TOKEN", "changeme").strip()
 # MCP auth is ON by default: /mcp requires `Authorization: Bearer <token>`.
 # Set WHEATSTOOK_BRIDGE_MCP_AUTH=0 to disable (only if you trust the network).
 REQUIRE_MCP_AUTH = os.environ.get("WHEATSTOOK_BRIDGE_MCP_AUTH", "1") == "1"
-PORT = int(os.environ.get("PORT", "8000"))
+# 14159, not 8000 or 18000: IANA already assigns 8000 to "irdmi" and 18000 to
+# "biimenu", and 8000 is additionally the default for uvicorn/FastAPI/Docker images
+# and most other MCP servers — both collide constantly on a dev box. 14159 is
+# unassigned in the IANA registry (verified against the official CSV) and sits
+# outside both the privileged range and the Windows dynamic range (49152+).
+# Zeabur still overrides this with its own PORT env var in the cloud.
+PORT = int(os.environ.get("PORT", "14159"))
 
 # FastMCP enables DNS-rebinding protection by default when it thinks it's on a
 # loopback host, which only allows Host headers of 127.0.0.1/localhost/::1 and

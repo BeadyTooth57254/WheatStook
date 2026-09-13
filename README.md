@@ -17,7 +17,7 @@ The build auto-deploys the DLL to the game mods folder (`[AI聊天]麦垛 WheatS
 
 Copy `config.example.json` into `config.json` in-game. Every field has a `_说明_*` Chinese comment next to it (the mod ignores `_`-prefixed fields; they are documentation only). You can also use `wheatstook_help` or the optional GMCM menu.
 
-**Fields** (defaults): `Mode`(operit), `HostPort`(58331), `FarmhandPort`(58332), `OperitBridgeUrl`(`http://127.0.0.1:8000`), `OperitBridgeToken`, `forwardToOperitChat`(false), `operitWebUrl`/`operitWebChatId`/`operitWebToken`, `forwardReadOperitReply`(false), `operitForwardFormat`(`【星露谷·{sender}】{message}`), `chunkSize`(5), `readWindow`(tool), `stateOutput`(text), `enableModKnowledge`(true), `sourceReadDepth`(intro), `modWhitelist`/`modBlacklist`, `cacheModUsage`(true), `includeMemoryInForward`(false), `reactionEnabled`(false), `enableAutoCompat`(false), `compatOverrides`(null), `keybindChatPanel`(OemTilde), `keybindBridgeToggle`(F8), `keybindHelp`(F1).
+**Fields** (defaults): `Mode`(operit), `HostPort`(58331), `FarmhandPort`(58332), `OperitBridgeUrl`(`http://127.0.0.1:14159`), `OperitBridgeToken`, `forwardToOperitChat`(false), `operitWebUrl`/`operitWebChatId`/`operitWebToken`, `forwardReadOperitReply`(false), `operitForwardFormat`(`【星露谷·{sender}】{message}`), `chunkSize`(5), `readWindow`(tool), `stateOutput`(text), `enableModKnowledge`(true), `sourceReadDepth`(intro), `modWhitelist`/`modBlacklist`, `cacheModUsage`(true), `includeMemoryInForward`(false), `reactionEnabled`(false), `enableAutoCompat`(false), `compatOverrides`(null), `keybindChatPanel`(OemTilde), `keybindBridgeToggle`(F8), `keybindHelp`(F1).
 
 > Real addresses (Operit web URL, tokens) are private and change over time — only placeholders, **never commit real ones**.
 

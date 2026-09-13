@@ -26,7 +26,7 @@
 | **farmhand**（AI） | `IsMainPlayer == false` | **58332** | AI 用 MCP 操控 |
 
 - **启动顺序无关紧要**：`EnsureServerStarted` 在进入存档后按 `IsMainPlayer` 判定角色，再绑对应端口；日志和 `/status` 会写明 `role=HOST|FARMHAND` 和端口，不会混淆。
-- **游戏内聊天 → operit**：host 的 Nagi 聊天面板（按 `` ` `` 打开），在 `config.json` 里设 `"Mode": "operit"` + `OperitBridgeUrl`（默认 `http://127.0.0.1:8000`）+ `OperitBridgeToken`（与桥一致）。你打的字会 POST 到桥 `/ingame-in`，operit 用 `read_ingame` 读到、用 `send_ingame` 回复，回复经桥 + 隧道推回 host 的面板（`/chat/push`）。
+- **游戏内聊天 → operit**：host 的 Nagi 聊天面板（按 `` ` `` 打开），在 `config.json` 里设 `"Mode": "operit"` + `OperitBridgeUrl`（默认 `http://127.0.0.1:14159`）+ `OperitBridgeToken`（与桥一致）。你打的字会 POST 到桥 `/ingame-in`，operit 用 `read_ingame` 读到、用 `send_ingame` 回复，回复经桥 + 隧道推回 host 的面板（`/chat/push`）。
 - **AI 控 farmhand**：client 的 `WHEATSTOOK_GAME_URL` 指 **58332**（farmhand）；`WHEATSTOOK_HOST_URL` 指 **58331**（host，仅用于推聊天回复）。
 
 ---
@@ -37,15 +37,15 @@
 
 **最省事（一键启动）：**
 1. 双击 `gen_token.bat` —— 生成一次性 token 并写到 `token.txt`，屏幕会显示它（之后粘到 operit）。
-2. 双击 `launcher.bat` —— 自动开两个窗口（桥 8000 + 隧道客户端），token、游戏地址都自动带了。
-3. operit 填 `http://192.168.100.236:8000/mcp`，鉴权 Bearer = step 1 显示的 token。
+2. 双击 `launcher.bat` —— 自动开两个窗口（桥 14159 + 隧道客户端），token、游戏地址都自动带了。
+3. operit 填 `http://192.168.100.236:14159/mcp`，鉴权 Bearer = step 1 显示的 token。
 
 **手动（等价，想自己来也可以）：**
 ```pwsh
-# ① 电脑上起桥（0.0.0.0:8000）
+# ① 电脑上起桥（0.0.0.0:14159）
 $env:WHEATSTOOK_BRIDGE_TOKEN='你的强密钥'
 python server.py
-#   它会打印： Phone on home Wi-Fi (LAN): http://<电脑局域网IP>:8000/mcp
+#   它会打印： Phone on home Wi-Fi (LAN): http://<电脑局域网IP>:14159/mcp
 
 # ② 电脑上起客户端（连本机桥）
 $env:WHEATSTOOK_BRIDGE_TOKEN='你的强密钥'
@@ -54,8 +54,8 @@ $env:WHEATSTOOK_HOST_URL='http://localhost:58331'      # host (游戏内聊天�
 python client.py
 ```
 
-**operit**：连接方式选 **streamable HTTP**，地址填 `http://<电脑局域网IP>:8000/mcp`，**鉴权选 Bearer Token，值填和电脑端一致的 `WHEATSTOOK_BRIDGE_TOKEN`**（/mcp 默认就是要它，没它进不来）。
-Windows 防火墙放行 TCP 8000。手机和电脑在同一 Wi-Fi 即可。
+**operit**：连接方式选 **streamable HTTP**，地址填 `http://<电脑局域网IP>:14159/mcp`，**鉴权选 Bearer Token，值填和电脑端一致的 `WHEATSTOOK_BRIDGE_TOKEN`**（/mcp 默认就是要它，没它进不来）。
+Windows 防火墙放行 TCP 14159。手机和电脑在同一 Wi-Fi 即可。
 若自动探测的 IP 不对（VPN/多网卡/无外网），设 `$env:WHEATSTOOK_LAN_IP='<你的局域网IP>'` 再起桥。
 
 ---
@@ -82,12 +82,12 @@ python client.py
 
 ```pwsh
 $env:WHEATSTOOK_BRIDGE_TOKEN='你的强密钥'
-$env:WHEATSTOOK_BRIDGE_URLS='ws://127.0.0.1:8000/tunnel,wss://<your-app>/tunnel'   # local + cloud
+$env:WHEATSTOOK_BRIDGE_URLS='ws://127.0.0.1:14159/tunnel,wss://<your-app>/tunnel'   # local + cloud
 $env:WHEATSTOOK_GAME_URL='http://localhost:58332'      # farmhand (AI 控的)
 python client.py
 ```
 
-在家手机连局域网 `http://<电脑IP>:8000/mcp`（快、无云开销），外出连 `https://<your-app>/mcp`。两个地址都指到同一个游戏，**不用来回改配置**。
+在家手机连局域网 `http://<电脑IP>:14159/mcp`（快、无云开销），外出连 `https://<your-app>/mcp`。两个地址都指到同一个游戏，**不用来回改配置**。
 
 ---
 
@@ -95,10 +95,10 @@ python client.py
 
 | 变量 | 作用 | 默认 |
 |---|---|---|
-| `PORT`（server） | 监听端口 | 8000 |
+| `PORT`（server） | 监听端口 | 14159 |
 | `WHEATSTOOK_LAN_IP`（server） | 覆盖自动探测的局域网 IP（VPN/多网卡/无外网时用） | 自动探测 |
 | `WHEATSTOOK_BRIDGE_TOKEN` | 共享密钥，server/client 一致 | changeme（必改） |
-| `WHEATSTOOK_BRIDGE_URLS`（client） | 逗号分隔的桥地址（可多个） | `ws://127.0.0.1:8000/tunnel` |
+| `WHEATSTOOK_BRIDGE_URLS`（client） | 逗号分隔的桥地址（可多个） | `ws://127.0.0.1:14159/tunnel` |
 | `WHEATSTOOK_GAME_URL`（client） | farmhand（AI 控的）游戏 HTTP API | `http://localhost:58332` |
 | `WHEATSTOOK_HOST_URL`（client） | host（玩家玩的）游戏 HTTP API，用于游戏内聊天回推 | `http://localhost:58331` |
 | `WHEATSTOOK_MODS_JSON`（client） | 键位映射文件 | `../scripts/mods_keybinds.json` |
@@ -116,7 +116,7 @@ python client.py
 
 ## 本地验证（不用游戏）
 
-- **工具链路**：三个终端，分别跑 `mock_game.py`、`server.py`（`WHEATSTOOK_BRIDGE_TOKEN=t`）、`client.py`（连 `ws://127.0.0.1:8000/tunnel`，`WHEATSTOOK_GAME_URL=http://localhost:58332`），再用任意 MCP 客户端连 `http://127.0.0.1:8000/mcp`，可看到工具并调用。
+- **工具链路**：三个终端，分别跑 `mock_game.py`、`server.py`（`WHEATSTOOK_BRIDGE_TOKEN=t`）、`client.py`（连 `ws://127.0.0.1:14159/tunnel`，`WHEATSTOOK_GAME_URL=http://localhost:58332`），再用任意 MCP 客户端连 `http://127.0.0.1:14159/mcp`，可看到工具并调用。
 - **游戏内聊天往返**：直接跑 `python test_chat_loop.py`，会用一个模拟 host 游戏把整条「`/ingame-in` → `read_ingame` → `send_ingame` → host `/chat/push`」走一遍。见到 `ALL OK` 即通。
 
 ## 加工具

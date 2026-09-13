@@ -18,7 +18,7 @@
 [手机: operit]
      │  streamable HTTP /mcp (Bearer token)
      ▼
-[Python MCP 桥 :8000]  ──WS 隧道──▶  [client.py]  ──HTTP──▶  [星露谷游戏]
+[Python MCP 桥 :14159]  ──WS 隧道──▶  [client.py]  ──HTTP──▶  [星露谷游戏]
         server.py                          │                 host :58331
                                             └── 游戏内聊天 ──▶  farmhand :58332
 ```
@@ -61,7 +61,7 @@ host 和 farmhand 都加载 麦垛；角色由"是否为主玩家"自动决定�
   "Mode": "operit",
   "HostPort": 58331,
   "FarmhandPort": 58332,
-  "OperitBridgeUrl": "http://127.0.0.1:8000",
+  "OperitBridgeUrl": "http://127.0.0.1:14159",
   "OperitBridgeToken": "<共享 token>"
 }
 ```
@@ -71,20 +71,20 @@ host 和 farmhand 都加载 麦垛；角色由"是否为主玩家"自动决定�
 ```bash
 cd mcp_bridge
 gen_token.bat        # 先跑一次：写入 token.txt（共享密钥）
-launcher.bat         # 启动桥(server.py 在 :8000) + 隧道 client(client.py)
+launcher.bat         # 启动桥(server.py 在 :14159) + 隧道 client(client.py)
 ```
 
 或者手动：
 
 ```bash
 set NAGI_BRIDGE_TOKEN=<token>
-python server.py     # 桥, 监听 0.0.0.0:8000, 提供 /mcp + /ingame-in + /health
+python server.py     # 桥, 监听 0.0.0.0:14159, 提供 /mcp + /ingame-in + /health
 python client.py     # 隧道 client -> farmhand localhost:58332, host localhost:58331
 ```
 
 ### 连接 operit（手机）
 
-- URL：`http://<电脑局域网IP>:8000/mcp`
+- URL：`http://<电脑局域网IP>:14159/mcp`
 - 鉴权：`Authorization: Bearer <token>` —— 和 `token.txt` 一致
 
 手机必须用电脑的 **局域网 IP**（比如 `192.168.100.236`），不能用 `127.0.0.1` / `localhost`。
@@ -125,7 +125,7 @@ operit 用 `read_ingame` 读取，用 `send_ingame` 回复，桥再通过 `/chat
 | `Mode` | 聊天后端：`operit`（MCP 桥） | `cc` |
 | `HostPort` | host 实例绑定的端口 | `58331` |
 | `FarmhandPort` | farmhand 实例绑定的端口 | `58332` |
-| `OperitBridgeUrl` | 用于游戏内聊天转发的桥地址 | `http://127.0.0.1:8000` |
+| `OperitBridgeUrl` | 用于游戏内聊天转发的桥地址 | `http://127.0.0.1:14159` |
 | `OperitBridgeToken` | 转发聊天时发给桥的共享 token | 空 |
 | `ApiProvider`/`ApiUrl`/`ApiKey`/`Model` | 旧的直连 LLM 聊天选项 | — |
 | `ChannelServerUrl` | 旧的 channel-server 聊天选项 | `http://localhost:9000/chat` |

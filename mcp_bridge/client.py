@@ -5,7 +5,7 @@ token, and answers tool calls by mapping them to the game's WheatStook HTTP API
 (http://127.0.0.1:<port>). Reconnects automatically if the link drops.
 
 Env:
-    WHEATSTOOK_BRIDGE_URL       e.g. wss://<your-zeabur-url>/tunnel  (default ws://localhost:8000/tunnel)
+    WHEATSTOOK_BRIDGE_URL       e.g. wss://<your-zeabur-url>/tunnel  (default ws://localhost:14159/tunnel)
     WHEATSTOOK_BRIDGE_TOKEN     shared secret, must match the server
     WHEATSTOOK_GAME_URL         farmhand game HTTP API (default http://localhost:58332)
     WHEATSTOOK_HOST_URL         host game HTTP API for in-game chat pushes (default http://localhost:58331)
@@ -28,10 +28,10 @@ log = logging.getLogger("WheatStook.tunnel")
 _DIR = os.path.dirname(os.path.abspath(__file__))
 # A list of bridge endpoints to stay attached to at once (comma-separated).
 # LAN default: run server.py on this same PC, phone reaches it over Wi-Fi.
-# Add a cloud URL for away-from-home control, e.g. "ws://127.0.0.1:8000/tunnel,wss://<your-domain>/tunnel".
+# Add a cloud URL for away-from-home control, e.g. "ws://127.0.0.1:14159/tunnel,wss://<your-domain>/tunnel".
 BRIDGE_URLS = [u.strip() for u in os.environ.get(
     "WHEATSTOOK_BRIDGE_URLS",
-    os.environ.get("WHEATSTOOK_BRIDGE_URL", "ws://127.0.0.1:8000/tunnel"),
+    os.environ.get("WHEATSTOOK_BRIDGE_URL", "ws://127.0.0.1:14159/tunnel"),
 ).split(",") if u.strip()]
 TOKEN = os.environ.get("WHEATSTOOK_BRIDGE_TOKEN", "changeme").strip()
 GAME_URL = os.environ.get("WHEATSTOOK_GAME_URL", "http://localhost:58332")  # farmhand (AI-controlled) game

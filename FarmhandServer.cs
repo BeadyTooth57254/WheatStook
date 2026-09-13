@@ -209,6 +209,7 @@ public class FarmhandServer
     public void Tick()
     {
         _tick++;
+        Heartbeat();
         lock (_actionsLock)
         {
             while (_actions.Count > 0)
@@ -236,6 +237,26 @@ public class FarmhandServer
     private int _dayEndTicks;
     private int _autoConfirmCooldown;
     private bool _autoConfirm = true;
+
+    // ── diagnostics (2026-09-08 night hang) ──
+    // That night's log ended with "auto-confirm: 确认对话框 确定" and no way to tell
+    // *which* dialog that was, or whether the main thread was still alive when the game
+    // stalled on SMAPI's NewDay sync. Both answers are cheap to record, so record them.
+    private int _heartbeatTicks;
+    private object? _lastDialog;
+    private int _sameDialogConfirms;
+    private bool _readyCheckLogged;
+    private const int MaxSameDialogConfirms = 3;
+    private const int HeartbeatTicks = 15 * 60;      // one line per 15s normally
+    private const int HeartbeatTicksDayEnd = 60;     // one line per second while day-end is armed
+
+    /// <summary>Keywords that mean "this is not a day-end hurdle". Deliberately narrow:
+    /// words that only ever appear in a quit/delete prompt, in both UI languages.</summary>
+    private static readonly string[] DestructiveKeywords =
+    {
+        "quit", "exit", "title screen", "delete", "overwrite",
+        "退出", "回标题", "返回标题", "标题画面", "删除", "覆盖",
+    };
 
     // pending level 5/10 profession choice: the AI decides, with a fallback so the night
     // never hangs waiting for an answer that may never come
@@ -282,7 +303,40 @@ public class FarmhandServer
         if (!Context.IsWorldReady || Game1.player is null) return;
 
         var menu = Game1.activeClickableMenu;
-        bool dayEndMenu = menu is LevelUpMenu or ShippingMenu or ConfirmationDialog;
+
+        // A co-op ready-check ("正在等待其他玩家……") is a ConfirmationDialog subclass, but it is
+        // NOT a day-end screen: clicking it CANCELS this player's "ready to sleep" state. Doing
+        // that while the host is mid-transition deadlocks the game's own NewDaySynchronizer —
+        // the farmhand parks in processMessages()/Thread.Sleep forever and the clock never rolls
+        // over (captured live 2026-09-13 12:25; same shape as the 09-08 hang). Never treat it as
+        // a day-end menu and never click it.
+        bool isReadyCheck = menu is ReadyCheckDialog
+                            || (menu is not null && menu.GetType().Name.Contains("ReadyCheck"));
+        bool dayEndMenu = !isReadyCheck && (menu is LevelUpMenu or ShippingMenu or ConfirmationDialog);
+
+        // Fresh window → reset the per-dialog confirm counter.
+        if (!ReferenceEquals(menu, _lastDialog))
+        {
+            _lastDialog = menu;
+            _sameDialogConfirms = 0;
+            _readyCheckLogged = false;
+        }
+
+        // A ConfirmationDialog that is still up after we confirmed it is not one of ours:
+        // stop treating it as a day-end screen (so we stop re-arming the window on it) and
+        // never click it again. Without this, a dialog whose confirm() does not close it
+        // would be re-clicked forever while the farmhand sits in bed.
+        bool dialogGivenUp = menu is ConfirmationDialog && _sameDialogConfirms >= MaxSameDialogConfirms;
+        if (dialogGivenUp)
+        {
+            dayEndMenu = false;
+            if (_sameDialogConfirms == MaxSameDialogConfirms)
+            {
+                _sameDialogConfirms++;   // announce the give-up once, not on every tick
+                _monitor.Log($"auto-confirm: 确认框点了 {MaxSameDialogConfirms} 次仍未关闭 → 停手不再点，" +
+                             "这大概率是别的 mod 的窗口", LogLevel.Error);
+            }
+        }
 
         // In bed, just asked to sleep, or a day-end screen is already up → keep the
         // window open. These screens can appear after the clock has already rolled over
@@ -318,8 +372,39 @@ public class FarmhandServer
                     break;
 
                 case ConfirmationDialog cd:
+                    // Co-op ready-check ("正在等待其他玩家……"): clicking it un-readies us and stalls
+                    // the night forever. Leave it strictly alone — the game resolves it by itself.
+                    if (isReadyCheck)
+                    {
+                        if (!_readyCheckLogged)
+                        {
+                            _readyCheckLogged = true;
+                            _monitor.Log($"auto-confirm: 跳过联机准备握手框（绝不点击）— {DescribeDialog(cd)}",
+                                         LogLevel.Info);
+                        }
+                        _autoConfirmCooldown = 60;
+                        break;
+                    }
+
+                    // Already gave up on this one above: leave it on screen and stop.
+                    if (dialogGivenUp) { _autoConfirmCooldown = 60; break; }
+
+                    _sameDialogConfirms++;
+                    string text = DescribeDialog(cd);
+
+                    // Never click through a quit/delete prompt on the player's behalf,
+                    // whatever language it is written in.
+                    if (LooksDestructive(text))
+                    {
+                        _monitor.Log($"auto-confirm: 拒绝点击（疑似退出/删除类对话框，等你手动处理）— {text}",
+                                     LogLevel.Warn);
+                        _autoConfirmCooldown = 60;
+                        break;
+                    }
+
                     cd.confirm();
-                    _monitor.Log("auto-confirm: 确认对话框 确定", LogLevel.Info);
+                    _monitor.Log($"auto-confirm: 确认对话框 确定（第{_sameDialogConfirms}次）— {text}",
+                                 LogLevel.Info);
                     _autoConfirmCooldown = 20;
                     break;
             }
@@ -328,6 +413,76 @@ public class FarmhandServer
         {
             _monitor.Log($"auto-confirm failed: {ex.Message}", LogLevel.Warn);
         }
+    }
+
+    /// <summary>
+    /// A slow pulse so that a future hang is diagnosable: if the log stops mid-second
+    /// while a day-end screen is up, the main thread is stuck; if it keeps beating, the
+    /// game is alive and merely waiting on something. Trace level keeps it out of the
+    /// on-screen console while still landing in SMAPI-latest.txt.
+    /// </summary>
+    private void Heartbeat()
+    {
+        int period = _dayEndTicks > 0 ? HeartbeatTicksDayEnd : HeartbeatTicks;
+        if (++_heartbeatTicks < period) return;
+        _heartbeatTicks = 0;
+        if (!Context.IsWorldReady || Game1.player is null) return;
+
+        var menu = Game1.activeClickableMenu;
+        _monitor.Log(
+            $"heartbeat: tick={_tick} 游戏内时间={Game1.timeOfDay} 在床={Game1.player.isInBed.Value} " +
+            $"菜单={(menu is null ? "无" : menu.GetType().Name)} dayEnd={_dayEndTicks} " +
+            $"重复确认={_sameDialogConfirms}",
+            LogLevel.Trace);
+    }
+
+    /// <summary>
+    /// A dialog's own words, for the log. Field names are deliberately not guessed:
+    /// vanilla's ConfirmationDialog and the mods that reuse it keep their text in
+    /// different members, and a whitelist built on a wrong guess is worse than none.
+    /// </summary>
+    private static string DescribeDialog(object menu)
+    {
+        var sb = new StringBuilder(menu.GetType().Name);
+        var type = menu.GetType();
+        const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+        foreach (var f in type.GetFields(All))
+        {
+            if (f.FieldType != typeof(string)) continue;
+            try
+            {
+                if (f.GetValue(menu) is string v && !string.IsNullOrWhiteSpace(v))
+                    sb.Append(" | ").Append(f.Name).Append("=\"").Append(Shorten(v)).Append('"');
+            }
+            catch { /* an unreadable field is not worth a crash */ }
+        }
+
+        foreach (var p in type.GetProperties(All))
+        {
+            if (p.PropertyType != typeof(string) || p.GetIndexParameters().Length > 0) continue;
+            try
+            {
+                if (p.GetValue(menu) is string v && !string.IsNullOrWhiteSpace(v))
+                    sb.Append(" | ").Append(p.Name).Append("=\"").Append(Shorten(v)).Append('"');
+            }
+            catch { /* same */ }
+        }
+
+        return sb.ToString();
+    }
+
+    private static string Shorten(string s)
+    {
+        s = s.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        return s.Length <= 160 ? s : s[..160] + "…";
+    }
+
+    private static bool LooksDestructive(string described)
+    {
+        foreach (var keyword in DestructiveKeywords)
+            if (described.Contains(keyword, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     private static void ClickComponent(IClickableMenu menu, ClickableComponent? component)

@@ -231,6 +231,7 @@ public class FarmhandServer
         StepMovement();
         AutoConfirmDayEnd();
         HandleDialogueChoice();
+        HandleFestivalDialogue();
     }
 
     // ── day-end menu automation ──
@@ -698,6 +699,92 @@ public class FarmhandServer
 
         if (--_pendingDialogueTicks <= 0)
             ResolveDialogue(0, "AI 没回话，默认第一项");
+    }
+
+    // ── festivals ──
+    // A festival swaps the map, locks every exit and hands you mandatory dialogue boxes.
+    // Two things broke there: the AI could force-warp itself straight out of the festival
+    // (see ForceWarp), and a *plain* dialogue — the kind with no response buttons — was
+    // clicked by nobody, because HandleDialogueChoice only handles dialogues that HAVE
+    // options (added in 1.4.0, which removed the old day-end DialogueBox branch). A human
+    // dismisses a plain box with a click; an unattended farmhand has no human, so the
+    // festival wedged on the very first box.
+    private DialogueBox? _festivalDialog;
+    private int _festivalDialogTicks;
+    private const int FestivalDialogDelayTicks = 90;   // ~1.5s, long enough to log it first
+
+    /// <summary>
+    /// True while the farmhand is standing inside a running festival. The game locks every
+    /// exit until the event ends; ForceWarp moves the farmer by hand and bypasses that.
+    /// </summary>
+    private static bool IsInsideFestival()
+    {
+        try
+        {
+            var here = Game1.currentLocation;
+            if (here is null) return false;
+
+            // CurrentEvent only exists while the player is actually inside the event.
+            if (Game1.CurrentEvent?.isFestival == true) return true;
+
+            // Belt and braces: on a festival day, standing at the festival venue during
+            // festival hours counts even if CurrentEvent has not been set for us yet.
+            string venue = Game1.whereIsTodaysFest;
+            if (string.IsNullOrEmpty(venue)) return false;
+            bool atVenue = here.NameOrUniqueName == venue || here.Name == venue;
+            return atVenue && Game1.timeOfDay >= 900 && Game1.timeOfDay < 2200;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Dismiss the plain (no-options) dialogue boxes a festival puts up, after a short
+    /// delay so the text still reaches the log and the chat panel. Dialogues that DO have
+    /// options are left to HandleDialogueChoice, which waits for the AI to decide.
+    /// </summary>
+    private void HandleFestivalDialogue()
+    {
+        if (!Context.IsWorldReady || Game1.player is null) return;
+
+        // Same switch as the choice path: dialogueChoiceMode=off means "a human handles
+        // dialogues, hands off" — respect that here too, so it doubles as a kill switch
+        // that needs no rebuild.
+        string mode = (DialogueChoiceMode ?? "ai").Trim().ToLowerInvariant();
+        if (mode == "off") return;
+
+        if (Game1.activeClickableMenu is not DialogueBox box || box.responses is { Length: > 0 })
+        {
+            _festivalDialog = null;
+            _festivalDialogTicks = 0;
+            return;
+        }
+
+        if (!ReferenceEquals(_festivalDialog, box))
+        {
+            _festivalDialog = box;
+            _festivalDialogTicks = FestivalDialogDelayTicks;
+            string text = "";
+            try { text = box.getCurrentString() ?? ""; } catch { }
+            _monitor.Log($"festival-dialog: 无选项对话（没人能点，{FestivalDialogDelayTicks / 60}s 后自动关）— {text}",
+                         LogLevel.Info);
+            ChatDisplay?.Invoke($"【对话】{text}");
+            return;
+        }
+
+        if (--_festivalDialogTicks > 0) return;
+
+        _festivalDialog = null;
+        _festivalDialogTicks = 0;
+        try
+        {
+            // A plain dialogue closes on a click; there is no button to press.
+            box.receiveLeftClick(Game1.getMouseX(), Game1.getMouseY());
+            _monitor.Log("festival-dialog: 已自动关闭", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"festival-dialog click failed: {ex.Message}", LogLevel.Warn);
+        }
     }
 
     /// <summary>Click the chosen dialogue response.</summary>
@@ -2401,6 +2488,19 @@ public class FarmhandServer
     private void ForceWarp(Farmer? farmer, GameLocation? target, int tx, int ty, int facing = 2)
     {
         if (farmer is null || target is null) return;
+
+        // Festivals lock you in: the game disables every exit until the event ends, and a
+        // farmhand that walks out mid-festival breaks the festival for the host too. Since
+        // Game1.warpFarmer never completes for this farmhand we move it by hand — which also
+        // bypasses that lock — so restore the rule here, in the single place every caller
+        // goes through (the /warp API and the mod's own walk-home logic both land here).
+        if (IsInsideFestival())
+        {
+            _monitor.Log($"force-warp blocked: 节日进行中，不能离开节日地图（请求去 {target.Name} @ {tx},{ty}）",
+                         LogLevel.Warn);
+            return;
+        }
+
         try
         {
             Game1.locationRequest = null;

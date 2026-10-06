@@ -1,9 +1,9 @@
 # 麦垛 WheatStook
 
-An AI chat + farmhand-control mod for Stardew Valley. This version is **fully original clean-room code** and does not depend on the unlicensed source of `anqinou-art/NagiBridge`.
-> Tribute: A **clean-room rewrite** inspired by [anqinou-art/NagiBridge](https://github.com/anqinou-art/NagiBridge). The implementation is original and borrows no upstream code. The upstream repo has no LICENSE (default all rights reserved); this work is not bound by it. `README.md` is the main English doc; see [README.zh-CN.md](README.zh-CN.md) for Chinese.
+An AI chat + farmhand-control mod for Stardew Valley. This version is **fully original clean-room code** and shares no source code with `anqinou-art/NagiBridge`.
+> Tribute: A **clean-room rewrite** inspired by [anqinou-art/NagiBridge](https://github.com/anqinou-art/NagiBridge). The implementation is original and shares no code with the upstream project. The upstream project adopted the **MIT License** in September 2026. `README.md` is the main English doc; see [README.zh-CN.md](README.zh-CN.md) for Chinese.
 > Authorship: The code was written by an **AI agent (垛口 / a sentinel)** under the direction and ownership of **BeadyTooth57254**, who holds the copyright. This is an honest disclosure: the code here is AI-authored.
-> License: Released under **GNU AGPL-3.0** (strong copyleft). Commercial use is permitted, but **derivative works and network running** must **stay open source and provide source** (§13 network clause). Copyright © BeadyTooth57254. See [LICENSE](LICENSE).
+> License: Released under the **MIT License** — free to use, modify and redistribute, including commercially; just keep the copyright notice and the license text. Copyright © BeadyTooth57254. See [LICENSE](LICENSE).
 
 ## Build / Deploy
 

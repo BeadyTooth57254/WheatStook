@@ -132,6 +132,6 @@ operit 用 `read_ingame` 读取，用 `send_ingame` 回复，桥再通过 `/chat
 
 ## 开源许可
 
-基于 [GNU AGPL-3.0](LICENSE) 发布（强 copyleft）：商用允许，但**衍生作品与网络运行**都须**保持开源并给出源码**（§13 网络条款）。版权归 **BeadyTooth57254**。
+基于 [MIT](LICENSE) 发布：可自由使用、修改、再分发（含商用），只需保留版权声明与许可全文。版权归 **BeadyTooth57254**。
 
-> 致敬：本作是对 [anqinou-art/NagiBridge](https://github.com/anqinou-art/NagiBridge) 的**干净重写**，实现代码为**原创、未借上游代码**，不是从上游衍生的"适配版"。上游仓库无 LICENSE（默认 all rights reserved），本作不受其约束，也未使用其代码。
+> 致敬：本作是对 [anqinou-art/NagiBridge](https://github.com/anqinou-art/NagiBridge) 的**干净重写**，实现代码为**原创、与上游无共享代码**，不是从上游衍生的"适配版"。上游项目已于 2026 年 9 月改用 **MIT** 协议。

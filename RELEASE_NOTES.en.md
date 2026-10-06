@@ -76,4 +76,4 @@ Every field is documented in `config.example.json`.
 
 ## License
 
-AGPL-3.0 (including the §13 network clause). This project is a **clean-room rewrite** with no upstream code; see `NOTICE`.
+v1.4.1 shipped under AGPL-3.0 (including the §13 network clause); **the project has since moved to MIT**. This project is a **clean-room rewrite** with no upstream code; see `NOTICE`.

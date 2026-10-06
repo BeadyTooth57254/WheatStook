@@ -1,14 +1,18 @@
 麦垛 (WheatStook)
 Copyright (c) 2026 BeadyTooth57254
 
-This is a clean-room Stardew Valley SMAPI mod. The code is original and does not
-incorporate upstream anqinou-art/NagiBridge code. Credit to the original project's
-author for the concept.
+This is a clean-room Stardew Valley SMAPI mod. The code is original and shares
+no source code with upstream anqinou-art/NagiBridge. Credit to the original
+project's author for the concept.
 
 The code was authored by an AI agent (垛口 / a sentinel) under the direction and
 ownership of BeadyTooth57254, who holds the copyright.
 
-This program is free software: you can redistribute it and/or modify it under the
-terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-See the LICENSE file for the full text.
+This program is free software, released under the MIT License. See the LICENSE
+file for the full text. Commercial use, modification and redistribution are all
+permitted; the copyright notice and the license text must be kept.
+
+Upstream note: anqinou-art/NagiBridge adopted the MIT License in September 2026.
+This repository's git history contains that project's earlier commits (imported
+when the repository was created); they are retained for provenance and are
+redistributed under their own MIT terms. The current tree contains none of them.

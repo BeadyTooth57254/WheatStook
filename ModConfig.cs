@@ -100,6 +100,14 @@ public class ModConfig
     // POST /dialogue or the wheatstook_dialogue tool.
     public string dialogueChoiceMode { get; set; } = "ai";
 
+    // --- Chat panel: story dialogue ---
+    // The mod's own panel shows the lines that need the AI to act on them. Option-less
+    // story/festival dialogue needs no decision — the farmhand just dismisses it — and
+    // echoing it pops the panel open in the middle of a cutscene. Off by default: those
+    // lines still go to the SMAPI log, they just stay out of the panel. Turn this on to
+    // put them back. Dialogues that DO offer choices are unaffected and always shown.
+    public bool panelShowStoryDialogue { get; set; } = false;
+
     // --- Auto-compatibility layer ---
     // When enableAutoCompat is on, 麦垛 detects installed mods that change
     // world state (ring slots, backpack, custom crops/regions, professions, ...)

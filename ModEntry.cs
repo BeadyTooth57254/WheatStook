@@ -175,6 +175,7 @@ public class ModEntry : Mod
             api.AddBoolOption(modManifest, () => _config!.forwardReadOperitReply, v => _config!.forwardReadOperitReply = v, () => "forwardReadOperitReply", () => "读回 Operit 回复");
             api.AddBoolOption(modManifest, () => _config!.includeMemoryInForward, v => _config!.includeMemoryInForward = v, () => "includeMemoryInForward", () => "转发时带回忆");
             api.AddBoolOption(modManifest, () => _config!.reactionEnabled, v => _config!.reactionEnabled = v, () => "reactionEnabled", () => "AI 对事件有反应");
+            api.AddBoolOption(modManifest, () => _config!.panelShowStoryDialogue, v => _config!.panelShowStoryDialogue = v, () => "panelShowStoryDialogue", () => "剧情对白也弹进面板");
             api.AddNumberOption(modManifest, () => _config!.chunkSize, v => _config!.chunkSize = v, () => "chunkSize", () => "地图分块边长");
             api.AddTextOption(modManifest, () => _config!.readWindow, v => _config!.readWindow = v, () => "readWindow", () => "读取窗口 (tool/beehouse/navigate/explore)");
             api.AddTextOption(modManifest, () => _config!.stateOutput, v => _config!.stateOutput = v, () => "stateOutput", () => "状态输出 (text/image/auto)");
@@ -215,6 +216,7 @@ public class ModEntry : Mod
             _server.ProfessionMode = _config!.professionMode;
             _server.ProfessionTimeoutSeconds = _config!.professionTimeoutSeconds;
             _server.DialogueChoiceMode = _config!.dialogueChoiceMode;
+            _server.PanelShowStoryDialogue = _config!.panelShowStoryDialogue;
             _server.AiNotify = SendAiMessage;
             _server.Start();
         }

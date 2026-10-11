@@ -69,6 +69,9 @@
   "dialogueChoiceMode": "ai",
   "_说明_dialogueChoiceMode": "对话选项怎么选（默认 ai=AI 临时决定）。NPC 提问/商店问答这类带选项的对话会卡住 farmhand 直到有人点。ai=把选项报给 AI 并等它回话（同样 professionTimeoutSeconds 秒），超时默认选第一项；也可写死 first/random，或 off=留给真人点。AI 用 wheatstook_dialogue 看选项并回答。",
 
+  "panelShowStoryDialogue": false,
+  "_说明_panelShowStoryDialogue": "剧情对话要不要也弹进聊天面板（默认关）。节日/剧情里那些【没有选项】的 NPC 对白，farmhand 只需要自动点掉、不需要做决定；关掉=只写日志，面板保持安静（也不会在看剧情时弹开）；开=照旧把【对话】文本显示在面板里。要选择的对白（带选项）不受影响，永远会显示。",
+
   "enableAutoCompat": false,
   "_说明_enableAutoCompat": "自动兼容层（默认关）。开=启动时检测到会改变游戏世界的模组（加戒指槽/超大背包/自定义作物/新地区/职业循环等，按 UniqueId 识别，不看文件夹名）就自动激活对应兼容 profile，并把激活列表写进 /state，让 AI 知道这农场不是原版。",
   "compatOverrides": null,

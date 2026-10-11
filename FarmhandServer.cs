@@ -40,6 +40,15 @@ public class FarmhandServer
     private Queue<Point>? _path;
     private int _moveCooldown;
 
+    // follow: a target that keeps moving needs re-pathing, so the spec is kept and the
+    // path is rebuilt from StepFollow() whenever the current one runs out. Format is
+    // "player:Name" or "npc:Name"; null = not following.
+    private string? _followTarget;
+    private int _followCooldown;
+    private const int FollowRepathTicks = 20;   // ~3x per second
+    private const int FollowLoseTicks = 60 * 30; // give up after ~30s if the target vanished
+    private int _followMissingTicks;
+
     private readonly IModHelper _helper;
     private List<object>? _forgeEnchantments; // cached Pick Forge Enchantment tool->enchant map
 
@@ -229,6 +238,7 @@ public class FarmhandServer
         }
 
         StepMovement();
+        StepFollow();
         AutoConfirmDayEnd();
         HandleDialogueChoice();
         HandleFestivalDialogue();
@@ -292,6 +302,11 @@ public class FarmhandServer
     /// <summary>How to answer a dialogue that offers options: "ai" (ask, then fall back),
     /// "first", "random", or "off" (leave it to a human).</summary>
     public string DialogueChoiceMode { get; set; } = "ai";
+
+    /// <summary>Echo option-less story/festival dialogue into the chat panel. Off by
+    /// default: it needs no decision, and echoing it pops the panel open mid-cutscene.
+    /// It is always written to the SMAPI log either way.</summary>
+    public bool PanelShowStoryDialogue { get; set; } = false;
 
     /// <summary>
     /// A farmhand that sleeps in co-op still gets the day-end screens — the skill
@@ -767,7 +782,9 @@ public class FarmhandServer
             try { text = box.getCurrentString() ?? ""; } catch { }
             _monitor.Log($"festival-dialog: 无选项对话（没人能点，{FestivalDialogDelayTicks / 60}s 后自动关）— {text}",
                          LogLevel.Info);
-            ChatDisplay?.Invoke($"【对话】{text}");
+            // 剧情对白不需要做决定，默认不进面板：它会把面板弹开，看剧情的时候碍事。
+            // 文本始终写进 SMAPI 日志；要显示在面板里就把 panelShowStoryDialogue 打开。
+            if (PanelShowStoryDialogue) ChatDisplay?.Invoke($"【对话】{text}");
             return;
         }
 
@@ -879,6 +896,87 @@ public class FarmhandServer
         float speed = farmer.getMovementSpeed();
         if (diff.Length() < speed) farmer.Position = target;
         else { diff.Normalize(); farmer.Position += diff * speed; }
+    }
+
+    /// <summary>
+    /// Keep walking toward <see cref="_followTarget"/>. A player keeps moving, so a single
+    /// path goes stale the moment it is computed — this rebuilds it whenever the current
+    /// one runs out. Standing still (target in another location, or on top of us) is not
+    /// an error; follow just reports what it did through GET /state's following field.
+    /// </summary>
+    private void StepFollow()
+    {
+        if (_followTarget is null || !Context.IsWorldReady || Game1.player is null) return;
+        if (_followCooldown > 0) { _followCooldown--; return; }
+        _followCooldown = FollowRepathTicks;
+
+        var me = Game1.player;
+        var loc = me.currentLocation;
+        if (loc is null) return;
+        if (_path is { Count: > 0 }) return;   // 还有一段没走完，先走完
+
+        var (kind, name) = SplitTarget(_followTarget);
+        Point? goal = null;
+        if (kind == "player")
+        {
+            var f = FindFarmer(name);
+            if (f is not null && ReferenceEquals(f.currentLocation, loc)) goal = f.TilePoint;
+        }
+        else
+        {
+            var npc = loc.characters.FirstOrDefault(n => n.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (npc is not null) goal = npc.TilePoint;
+        }
+
+        if (goal is null)
+        {
+            // Target is not here (yet). Don't spam the log; just stop moving.
+            if (++_followMissingTicks > FollowLoseTicks)
+            {
+                _monitor.Log($"follow: 找不到 {_followTarget}（可能已经离开这个地点），停止跟随。", LogLevel.Info);
+                _followTarget = null;
+                _followMissingTicks = 0;
+            }
+            return;
+        }
+        _followMissingTicks = 0;
+
+        var here = me.TilePoint;
+        if (Math.Abs(goal.Value.X - here.X) + Math.Abs(goal.Value.Y - here.Y) <= 1) return;  // 已经贴着了
+        var path = FindPath(loc, here, goal.Value);
+        if (path.Count > 0) _path = new Queue<Point>(path);
+    }
+
+    /// <summary>Split "player:Es_099" / "npc:Abigail" / "Abigail" into (kind, name).</summary>
+    private static (string Kind, string Name) SplitTarget(string spec)
+    {
+        int colon = spec.IndexOf(':');
+        return colon > 0
+            ? (spec[..colon].Trim().ToLowerInvariant(), spec[(colon + 1)..].Trim())
+            : ("", spec.Trim());
+    }
+
+    /// <summary>Another player by name (case-insensitive), or null.</summary>
+    private static Farmer? FindFarmer(string name) =>
+        Game1.otherFarmers?.Values?.FirstOrDefault(
+            f => f is not null && f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Parse a "x,y" tile pair, as the follow/move documentation promises.</summary>
+    private static bool TryParseTile(string text, out int x, out int y)
+    {
+        x = y = 0;
+        var parts = text.Split(',', StringSplitOptions.TrimEntries);
+        return parts.Length == 2 && int.TryParse(parts[0], out x) && int.TryParse(parts[1], out y);
+    }
+
+    /// <summary>Best-effort: which location holds an NPC with this name (for error hints).</summary>
+    private static string? FindNpcLocation(string name)
+    {
+        foreach (var l in Game1.locations)
+        {
+            if (l.characters.Any(n => n.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) return l.NameOrUniqueName;
+        }
+        return null;
     }
 
     // ── HTTP plumbing ──
@@ -1081,7 +1179,8 @@ public class FarmhandServer
                 backpackCapacity = farmer.MaxItems,
                 ridingTractor = RidingTractor(),
                 mountName = farmer.mount?.Name,
-                isMoving = _path is { Count: > 0 }
+                isMoving = _path is { Count: > 0 },
+                following = _followTarget
             },
             location = new { name = loc.Name, mapWidth = loc.Map.DisplayWidth / 64, mapHeight = loc.Map.DisplayHeight / 64, isGreenhouse = IsGreenhouseLocation(loc), isCellar = IsCellarLocation(loc) },
             time = new { timeOfDay = Game1.timeOfDay, dayOfMonth = Game1.dayOfMonth, season = Game1.currentSeason, year = Game1.year },
@@ -1994,13 +2093,19 @@ public class FarmhandServer
         Enqueue(() =>
         {
             if (Game1.player is null) return;
+            _followTarget = null;          // 手动走路就取消跟随，别跟它抢
+            _followMissingTicks = 0;
             _path = steps > 0 ? new Queue<Point>(path) : new Queue<Point>(new[] { new Point(tx, ty) });
             _moveCooldown = 0;
         });
         return new { ok = true, x = tx, y = ty, steps };
     }
 
-    private object HandleStop() { Enqueue(() => _path = null); return new { ok = true }; }
+    private object HandleStop()
+    {
+        Enqueue(() => { _followTarget = null; _followMissingTicks = 0; _path = null; });
+        return new { ok = true, status = "stopped" };
+    }
 
     private object HandleFace(HttpListenerContext ctx)
     {
@@ -2135,25 +2240,84 @@ public class FarmhandServer
     {
         if (!Context.IsWorldReady) throw new InvalidOperationException("World not ready");
         var p = ReadJson(ctx);
-        string target = Get(p, "target", "Follow");
-        var loc = Game1.player?.currentLocation;
-        // Validate the target actually exists before pathing, so the AI gets a real
-        // "no such target" instead of an echo that silently goes nowhere.
-        bool isNpc = loc != null && loc.characters.Any(n => n.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
-        bool isPlayer = Game1.otherFarmers.Values.Any(f => f.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
-        if (!isNpc && !isPlayer)
-            return new { ok = false, error = $"找不到目标 '{target}' (no NPC or player with that name in the current location)." };
+        string raw = (Get(p, "target", "Follow") ?? "").Trim();
+
+        // Documented behaviour: an empty target stops following. (It used to be impossible
+        // to stop — POST /stop only cleared the path and the next follow tick re-created it.)
+        if (raw.Length == 0)
+        {
+            Enqueue(() => { _followTarget = null; _followMissingTicks = 0; _path = null; });
+            return new { ok = true, status = "stopped" };
+        }
+
+        var me = Game1.player;
+        var loc = me?.currentLocation;
+
+        // "x,y" is a plain one-shot walk, like move_to.
+        if (TryParseTile(raw, out int tx, out int ty))
+        {
+            var walk = (loc is null || me is null) ? new List<Point>() : FindPath(loc, me.TilePoint, new Point(tx, ty));
+            Enqueue(() =>
+            {
+                _followTarget = null;
+                _path = walk.Count > 0 ? new Queue<Point>(walk) : new Queue<Point>(new[] { new Point(tx, ty) });
+                _moveCooldown = 0;
+            });
+            return new { ok = true, target = raw, status = "pathing", steps = walk.Count };
+        }
+
+        var (kind, name) = SplitTarget(raw);
+        if (name.Length == 0)
+            return new { ok = false, error = $"目标写成 '{raw}' 了：冒号后面要有名字，例如 player:Es_099 或 npc:Abigail。" };
+        if (kind is not ("player" or "farmer" or "npc" or "character" or ""))
+            return new { ok = false, error = $"不认识的前缀 '{kind}:'，只支持 player: / npc: / 直接 x,y。" };
+
+        bool playerOnly = kind is "player" or "farmer";
+        bool npcOnly = kind is "npc" or "character";
+
+        var farmer = playerOnly || !npcOnly ? FindFarmer(name) : null;
+        var npc = farmer is null && !playerOnly
+            ? loc?.characters.FirstOrDefault(n => n.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        if (farmer is null && npc is null)
+        {
+            string? elsewhere = npcOnly || !playerOnly ? FindNpcLocation(name) : null;
+            string hint = elsewhere is null || elsewhere == loc?.Name
+                ? ""
+                : $" 它现在在 {elsewhere}，先 warp 过去或者用 move_to。";
+            return new
+            {
+                ok = false,
+                error = $"找不到目标 '{name}'（当前地点 {loc?.Name} 里没有这个玩家或 NPC）。{hint}",
+                location = loc?.Name,
+            };
+        }
+
+        // A player in another location cannot be walked to: FindPath only knows this
+        // location's map, so say so instead of returning "tracking" and never moving.
+        if (farmer is not null && !ReferenceEquals(farmer.currentLocation, loc))
+        {
+            return new
+            {
+                ok = false,
+                target = "player:" + farmer.Name,
+                status = "elsewhere",
+                error = $"我在 {loc?.Name}，{farmer.Name} 在 {farmer.currentLocation?.Name}：先 warp 到那个地点，再 follow。",
+            };
+        }
+
+        string spec = farmer is not null ? "player:" + farmer.Name : "npc:" + npc!.Name;
+        var goal = farmer is not null ? farmer.TilePoint : npc!.TilePoint;
+        var first = (loc is null || me is null) ? new List<Point>() : FindPath(loc, me.TilePoint, goal);
         Enqueue(() =>
         {
-            var l = Game1.player?.currentLocation;
-            var npc = l?.characters.FirstOrDefault(n => n.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
-            if (npc != null)
-            {
-                var path = FindPath(l!, Game1.player!.TilePoint, npc.TilePoint);
-                _path = path.Count > 0 ? new Queue<Point>(path) : null;
-            }
+            _followTarget = spec;
+            _followMissingTicks = 0;
+            _path = first.Count > 0 ? new Queue<Point>(first) : null;
+            _moveCooldown = 0;
         });
-        return new { ok = true, target, status = "tracking" };
+        return new { ok = true, target = spec, status = "following", steps = first.Count };
     }
 
     private object HandleBed()

@@ -1,3 +1,44 @@
+# WheatStook v1.4.4 — follow actually follows, and story dialogue stays out of the panel
+
+> The release ships a **pre-built `WheatStook.dll`** — unzip and play, no build step.
+>
+> Two archives:
+> - **`WheatStook-v1.4.4.zip`** — the mod. Drop the whole `WheatStook/` folder into `Stardew Valley/Mods/`.
+> - **`WheatStook-v1.4.4-mcp_bridge.zip`** — the **Python bridge** for the co-op AI (`server.py` + `client.py` + `launcher.bat` + `gen_token.bat` + `scripts/mods_keybinds.json`). Unzip anywhere on the PC; it does **not** go into `Mods/`.
+
+---
+
+## v1.4.4 fix: `follow` never followed a player (two bugs stacked)
+
+Asking the farmhand to follow the host returned `{"ok": true, "status": "tracking"}` and then **did not move a single tile**. Two causes:
+
+- **No prefix parsing**: the bridge documents `player:Name` / `npc:Name` / `x,y`, but the mod compared the whole string against a name — so `player:Es_099` always came back as "target not found".
+- **Players were never path-found**: the pathing branch only looked at `loc.characters` (the NPC list). A player is never in there, so a player target silently did nothing.
+
+Now:
+
+- Prefixes are parsed; all three forms work (`player:` / `npc:` / `x,y`).
+- Players are **actually path-found**, and `Tick()` keeps re-planning as the current path runs out — a player keeps moving, so a single path goes stale immediately. That is the difference between "follow" and "walk there once".
+- A target in another location now **says so**: "I am in Mine, Es_099 is in Farm: warp there first, then follow." No more pretending.
+- An empty target stops following (previously `/stop` cleared the path and the next follow tick rebuilt it — you could not stop).
+- `move_to` cancels following, so the two never fight over the path.
+- `GET /state` gained a `following` field, so you can see who it is following.
+
+## v1.4.4 improvement: story dialogue no longer pops the chat panel
+
+- New setting **`panelShowStoryDialogue` (default `false`)**: option-less story/festival NPC dialogue is no longer pushed into the chat panel. It needs no decision, and echoing it popped the panel open in the middle of a cutscene.
+- The text is **still written to the SMAPI log** — nothing is lost.
+- **Dialogues that offer choices are unaffected**: `【对话】options`, `【升级】profession choice` and `chose "…"` still show up. Those are exactly the moments you have to decide something.
+- A new GMCM toggle ("剧情对白也弹进面板") puts them back if you want them.
+
+---
+
+## Two versions skipped here
+
+Notes for `v1.4.2` (co-op night deadlock fix + bridge default port 8000 → 14159) and `v1.4.3` (festival deadlock) live on their own GitHub Release pages.
+
+---
+
 # WheatStook v1.4.1 — Day-end automation, AI-driven choices, Operit forward fix
 
 > The release ships a **pre-built `WheatStook.dll`** — unzip and play, no build step.
